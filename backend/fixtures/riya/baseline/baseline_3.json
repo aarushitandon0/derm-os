@@ -1,0 +1,62 @@
+{
+  "meta": {
+    "mode": "sd",
+    "actions": [
+      "redness",
+      "texture",
+      "acne",
+      "pore",
+      "oiliness",
+      "moisture"
+    ],
+    "task_id": "synthetic-baseline-3",
+    "synthetic": true,
+    "note": "Hand-made placeholder, not a real YouCam result. Replace with scripts/make_fixtures.py."
+  },
+  "response": {
+    "status": 200,
+    "data": {
+      "task_status": "success",
+      "results": {
+        "output": [
+          {
+            "type": "redness",
+            "raw_score": 62.1,
+            "ui_score": 75,
+            "mask_urls": []
+          },
+          {
+            "type": "texture",
+            "raw_score": 57.6,
+            "ui_score": 73,
+            "mask_urls": []
+          },
+          {
+            "type": "acne",
+            "raw_score": 71.4,
+            "ui_score": 81,
+            "mask_urls": []
+          },
+          {
+            "type": "pore",
+            "raw_score": 54.2,
+            "ui_score": 71,
+            "mask_urls": []
+          },
+          {
+            "type": "oiliness",
+            "raw_score": 49.1,
+            "ui_score": 67,
+            "mask_urls": []
+          },
+          {
+            "type": "moisture",
+            "raw_score": 62.5,
+            "ui_score": 76,
+            "mask_urls": []
+          }
+        ]
+      }
+    }
+  }
+}

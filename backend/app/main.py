@@ -5,6 +5,7 @@ Run:  uvicorn app.main:app --reload  (from backend/)
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sqlite3
 import tempfile
@@ -15,20 +16,41 @@ from typing import Literal
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import settings  # noqa: F401  (loads backend/.env first)
 from . import decision as D
+from . import demo
 from . import evidence as E
 from .fingerprint import Fingerprint, measure
-from .youcam import YouCamClient, YouCamError, validate_actions
+from .settings import flag
+from .youcam import (YouCamClient, YouCamError, check_unit_reserve, download_masks,
+                     validate_actions)
 
-DB_PATH = Path(os.environ.get("DERMOS_DB", Path(__file__).resolve().parents[1] / "dermos.db"))
+log = logging.getLogger("dermos")
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+DB_PATH = Path(os.environ.get("DERMOS_DB", BACKEND_DIR / "dermos.db"))
+MEDIA_DIR = Path(os.environ.get("DERMOS_MEDIA", BACKEND_DIR / "media"))
+MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 CATALOG = D.load_catalog()
+
+
+def demo_mode() -> bool:
+    return flag("DEMO_MODE")
+
+
+def unit_reserve() -> float:
+    try:
+        return float(os.environ.get("YOUCAM_UNIT_RESERVE", "100"))
+    except ValueError:
+        return 100.0
 
 app = FastAPI(title="derm//os", version="0.1.0")
 app.add_middleware(CORSMiddleware, allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
                    allow_methods=["*"], allow_headers=["*"])
+# Locally saved YouCam masks (the original URLs expire).
+app.mount("/media", StaticFiles(directory=MEDIA_DIR), name="media")
 
 
 # ---------------------------------------------------------------- storage
@@ -74,7 +96,8 @@ def delete(kind: str, id: str) -> None:
 @app.get("/api/health")
 def health():
     return {"ok": True, "youcam_key": bool(os.environ.get("YOUCAM_API_KEY")),
-            "rules": [D.RULE_VERSION, E.RULE_VERSION]}
+            "demo_mode": demo_mode(), "personas": demo.personas() if demo_mode() else {},
+            "unit_reserve": unit_reserve(), "rules": [D.RULE_VERSION, E.RULE_VERSION]}
 
 
 @app.get("/api/catalog")
@@ -166,37 +189,68 @@ def _to_capture(c: dict) -> E.Capture:
     return E.Capture(c["raw_scores"], Fingerprint.from_dict(c["fingerprint"]), c["mode"], tuple(c["actions"]))
 
 
+def _media_url(path: Path) -> str:
+    return "/media/" + path.relative_to(MEDIA_DIR).as_posix()
+
+
 @app.post("/api/scan")
 async def scan(image: UploadFile = File(...),
                actions: str = Form("redness,texture,acne,pore,oiliness,moisture"),
                trial_id: str | None = Form(None),
                phase: Literal["baseline", "checkin", "free"] = Form("free"),
                face_ratio: float | None = Form(None), yaw: float | None = Form(None),
-               pitch: float | None = Form(None), roll: float | None = Form(None)):
+               pitch: float | None = Form(None), roll: float | None = Form(None),
+               persona: str = Form("riya"), fixture_set: str | None = Form(None)):
     acts = [a.strip() for a in actions.split(",") if a.strip()]
     try:
         mode = validate_actions(acts)
     except ValueError as e:
         raise HTTPException(422, str(e))
+    cap_id = uuid.uuid4().hex[:12]
     suffix = Path(image.filename or "x.jpg").suffix or ".jpg"
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp.write(await image.read())
         path = tmp.name
+    source, replay_info = "live", None
     try:
+        # The fingerprint always comes from the real uploaded pixels, demo or not.
         fp = measure(path, face_ratio, yaw, pitch, roll)
         need = 1080 if mode == "hd" else 480
         if fp.short_side < need:
             raise HTTPException(422, f"Photo short side is {fp.short_side}px; {mode.upper()} needs {need}px.")
-        try:
-            res = YouCamClient().analyze(path, acts)
-        except YouCamError as e:
-            raise HTTPException(502 if e.code not in (None, "no_key") else 503, e.friendly)
+        if demo_mode():
+            fset = fixture_set or ("baseline" if phase == "free" else phase)
+            prior = [c for c in all_("captures") if c.get("source") == "replay"
+                     and c.get("trial_id") == trial_id and (c.get("replay") or {}).get("set") == fset]
+            try:
+                rp = demo.pick(persona, fset, len(prior))
+            except demo.FixtureError as e:
+                raise HTTPException(503, str(e))
+            res, source = rp.result, "replay"
+            mode, acts = res.mode, list(res.actions)
+            replay_info = {"persona": rp.persona, "set": rp.set, "fixture": rp.path.name,
+                           "synthetic": rp.synthetic}
+            masks = demo.copy_masks(rp, MEDIA_DIR / cap_id)
+        else:
+            try:
+                client = YouCamClient()
+                bal = check_unit_reserve(client, unit_reserve())
+                if bal is not None:
+                    log.info("YouCam unit balance %s (reserve %s).", bal, unit_reserve())
+                res = client.analyze(path, acts)
+            except YouCamError as e:
+                if e.code == "unit_reserve":
+                    raise HTTPException(402, e.friendly)
+                raise HTTPException(502 if e.code not in (None, "no_key") else 503, e.friendly)
+            masks = download_masks(res, MEDIA_DIR / cap_id, getattr(client, "upload_http", None))
     finally:
         os.unlink(path)
 
     cap = put("captures", {"trial_id": trial_id, "phase": phase, "mode": mode, "actions": acts,
                            "fingerprint": fp.to_dict(), "raw_scores": res.raw_scores(),
-                           "result": res.to_dict(), "taken_at": datetime.now(timezone.utc).isoformat()})
+                           "result": res.to_dict(), "source": source, "replay": replay_info,
+                           "masks": {k: [_media_url(p) for p in v] for k, v in masks.items()},
+                           "taken_at": datetime.now(timezone.utc).isoformat()}, id=cap_id)
     # Immediate feedback: is this capture comparable to the trial baseline?
     check = None
     if trial_id and phase == "checkin":

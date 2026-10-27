@@ -32,6 +32,13 @@ python -m pytest -q           # 37 tests, no API units spent
 uvicorn app.main:app --reload # http://localhost:8000/docs
 ```
 
+## Demo safety
+
+- `DEMO_MODE=1` in `backend/.env`: `/api/scan` replays recorded YouCam responses from `backend/fixtures/<persona>/<set>/` (set = `baseline`, `checkin`, or an explicit `fixture_set` such as `lamp`). The uploaded photo is still fingerprinted from its real pixels, so the comparability gate still reacts to real light. Replayed captures are tagged `source: "replay"`; hand-made placeholders are also tagged `synthetic: true`.
+- `python scripts/make_fixtures.py` copies your real `results/*.json` (and saved masks) into `fixtures/riya/` (window 1-3 = baseline, window 4-5 = checkin, lamp = lamp), replacing the synthetic placeholders.
+- Unit guard: before every live scan the server reads the credit balance and refuses below `YOUCAM_UNIT_RESERVE` (default 100). If the balance can't be read, it logs that and continues.
+- Masks are downloaded right after each successful task (the URLs expire) into `backend/media/` and served at `/media/...`.
+
 ## Run the experiments (do this first)
 
 These produce the two numbers the demo leads with. Use your **phone camera** (laptop webcams are often below the 1080 px HD minimum; SD needs 480 px).

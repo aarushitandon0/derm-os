@@ -16,7 +16,8 @@ Usage:
     python scripts/run_experiments.py photos --replay         # recompute from saved results, no API calls
     python scripts/run_experiments.py photos --hd             # HD actions (needs 1080 px short side)
 
-Outputs results/<photo>.json (raw YouCam responses), results/report.json and results/report.md.
+Outputs results/<photo>.json (raw YouCam responses), results/media/<photo>/ (masks),
+results/report.json and results/report.md. Then: python scripts/make_fixtures.py
 """
 from __future__ import annotations
 
@@ -32,7 +33,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import app.settings  # noqa: E402,F401  (loads backend/.env)
 from app.evidence import Capture, compare_conditions, noise_summary, ranges  # noqa: E402
 from app.fingerprint import measure  # noqa: E402
-from app.youcam import YouCamClient, YouCamError, load_result, save_result, validate_actions  # noqa: E402
+from app.youcam import (YouCamClient, YouCamError, download_masks, load_result,  # noqa: E402
+                        save_result, validate_actions)
 
 DEFAULT_CONCERNS = ["redness", "texture", "acne", "pore", "oiliness", "moisture", "radiance", "age_spot"]
 
@@ -99,6 +101,9 @@ def main() -> int:
                 else:
                     res = client.analyze(p, actions)
                     save_result(res, res_path)
+                    # Mask URLs expire in ~2 h: save them now (plain GETs, no units).
+                    saved = download_masks(res, out / "media" / p.stem, client.upload_http)
+                    print(f"         saved {sum(len(v) for v in saved.values())} mask image(s)")
                     src = "live"
             except (YouCamError, FileNotFoundError) as e:
                 msg = getattr(e, "friendly", None) or str(e)

@@ -16,6 +16,7 @@ Important facts baked in here:
 from __future__ import annotations
 
 import json
+import logging
 import mimetypes
 import os
 import time
@@ -24,6 +25,8 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+
+log = logging.getLogger("dermos.youcam")
 
 BASE_URL = os.environ.get("YOUCAM_BASE_URL", "https://yce-api-01.makeupar.com")
 
@@ -207,6 +210,9 @@ class YouCamClient:
         """Unit balance. Endpoint used by other hackathon entries; tolerate shape changes."""
         return self._request("GET", "/s2s/v1.0/client/credit")
 
+    def unit_balance(self) -> float | None:
+        return parse_balance(self.credit())
+
     # -- workflow ------------------------------------------------------------
     def upload(self, image_path: str | Path) -> str:
         p = Path(image_path)
@@ -270,3 +276,96 @@ def load_result(path: str | Path) -> SkinResult:
     blob = json.loads(Path(path).read_text())
     m = blob["meta"]
     return normalize(blob["response"], m["mode"], m["actions"], m.get("task_id"))
+
+
+# ---------------------------------------------------------------- unit guard
+_BALANCE_KEYS = ("amount", "balance", "credit", "credits", "remaining", "units", "unit", "point", "points")
+
+
+def parse_balance(body: Any) -> float | None:
+    """Find the unit balance in a credit response without trusting one exact shape.
+    Lists (one entry per credit pack) are summed. Returns None if nothing numeric is found."""
+    if isinstance(body, list):
+        vals = [parse_balance(x) for x in body]
+        vals = [v for v in vals if v is not None]
+        return sum(vals) if vals else None
+    if not isinstance(body, dict):
+        return None
+    for k in ("data", "result", "results"):
+        if k in body:
+            v = parse_balance(body[k])
+            if v is not None:
+                return v
+    for k in _BALANCE_KEYS:
+        if k in body and not isinstance(body[k], (dict, list, bool)):
+            v = _num(body[k])
+            if v is not None:
+                return v
+    for k in _BALANCE_KEYS:
+        if isinstance(body.get(k), (dict, list)):
+            v = parse_balance(body[k])
+            if v is not None:
+                return v
+    return None
+
+
+class UnitReserveError(YouCamError):
+    pass
+
+
+def check_unit_reserve(client: Any, reserve: float) -> float | None:
+    """Refuse a live scan when the balance is below the reserve. If the balance can't be
+    read (network error, unknown shape), log it and allow the scan: the guard must never
+    be the reason a demo breaks."""
+    try:
+        bal = client.unit_balance()
+    except Exception as e:  # noqa: BLE001 - any failure here is non-fatal by design
+        log.warning("Unit balance check failed (%s); continuing without the guard.", type(e).__name__)
+        return None
+    if bal is None:
+        log.warning("Unit balance response had no recognisable balance; continuing without the guard.")
+        return None
+    if bal < reserve:
+        raise UnitReserveError(
+            f"Unit balance {bal:g} is below reserve {reserve:g}", code="unit_reserve",
+            friendly=(f"Live scans are paused: {bal:g} YouCam units left, below the reserve of {reserve:g} "
+                      "kept for the demo. Turn on DEMO_MODE=1 to replay recorded scans, or top up units."))
+    return bal
+
+
+# ---------------------------------------------------------------- masks
+_MASK_TYPES = {"image/png": ".png", "image/jpeg": ".jpg", "image/jpg": ".jpg", "image/webp": ".webp"}
+MAX_MASK_BYTES = 15 * 1024 * 1024
+
+
+def download_masks(result: SkinResult, dest_dir: str | Path,
+                   http: httpx.Client | None = None) -> dict[str, list[Path]]:
+    """Download every mask now, because YouCam result URLs expire (~2 h).
+    Uses a client WITHOUT the bearer header (these are presigned storage URLs).
+    A failed mask is skipped and logged without its URL (URLs carry signatures)."""
+    dest = Path(dest_dir)
+    own = http is None
+    http = http or httpx.Client(timeout=30)
+    saved: dict[str, list[Path]] = {}
+    try:
+        for concern, score in result.scores.items():
+            for i, url in enumerate(score.mask_urls):
+                if not isinstance(url, str) or not url.startswith(("https://", "http://")):
+                    continue
+                try:
+                    r = http.get(url)
+                    ctype = (r.headers.get("content-type") or "").split(";")[0].strip().lower()
+                    ext = _MASK_TYPES.get(ctype) or (Path(httpx.URL(url).path).suffix.lower() or "")
+                    if r.status_code != 200 or ext not in _MASK_TYPES.values() or len(r.content) > MAX_MASK_BYTES:
+                        log.warning("Mask %s #%d not saved (status %s, type %s).", concern, i, r.status_code, ctype)
+                        continue
+                    dest.mkdir(parents=True, exist_ok=True)
+                    out = dest / f"{concern}_{i}{ext}"
+                    out.write_bytes(r.content)
+                    saved.setdefault(concern, []).append(out)
+                except httpx.HTTPError as e:
+                    log.warning("Mask %s #%d download failed (%s).", concern, i, type(e).__name__)
+    finally:
+        if own:
+            http.close()
+    return saved

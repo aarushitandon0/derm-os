@@ -1,0 +1,62 @@
+{
+  "meta": {
+    "mode": "sd",
+    "actions": [
+      "redness",
+      "texture",
+      "acne",
+      "pore",
+      "oiliness",
+      "moisture"
+    ],
+    "task_id": "synthetic-lamp-1",
+    "synthetic": true,
+    "note": "Hand-made placeholder, not a real YouCam result. Replace with scripts/make_fixtures.py."
+  },
+  "response": {
+    "status": 200,
+    "data": {
+      "task_status": "success",
+      "results": {
+        "output": [
+          {
+            "type": "redness",
+            "raw_score": 55.3,
+            "ui_score": 71,
+            "mask_urls": []
+          },
+          {
+            "type": "texture",
+            "raw_score": 54.0,
+            "ui_score": 70,
+            "mask_urls": []
+          },
+          {
+            "type": "acne",
+            "raw_score": 70.8,
+            "ui_score": 80,
+            "mask_urls": []
+          },
+          {
+            "type": "pore",
+            "raw_score": 52.9,
+            "ui_score": 70,
+            "mask_urls": []
+          },
+          {
+            "type": "oiliness",
+            "raw_score": 51.6,
+            "ui_score": 69,
+            "mask_urls": []
+          },
+          {
+            "type": "moisture",
+            "raw_score": 60.1,
+            "ui_score": 74,
+            "mask_urls": []
+          }
+        ]
+      }
+    }
+  }
+}

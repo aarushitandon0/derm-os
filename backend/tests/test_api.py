@@ -10,6 +10,7 @@ from PIL import Image
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("DERMOS_DB", str(tmp_path / "t.db"))
+    monkeypatch.setenv("DERMOS_MEDIA", str(tmp_path / "media"))
     import importlib
     import app.main as m
     importlib.reload(m)

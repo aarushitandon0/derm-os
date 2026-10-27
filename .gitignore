@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+*.db
+.venv/
+.pytest_cache/
+backend/results/
+backend/media/
+photos/
+node_modules/
+frontend/dist/

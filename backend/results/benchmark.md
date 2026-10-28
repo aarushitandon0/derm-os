@@ -1,8 +1,8 @@
 # derm//os evidence benchmark
 
-**61 of 61 cases pass.**
+**91 of 91 cases pass.**
 
-Written and run by the derm//os team, so this is **not an independent evaluation**. Each case has an expected output written from the design doc before the engine was run. It shows the decision and evidence rules behave as designed; it says nothing about how accurate YouCam's skin scores are. No YouCam calls, no units spent.
+Written and run by the derm//os team, so this is **not an independent evaluation**. Each case has an expected output written from the design doc before the engine was run. It shows the decision and evidence rules behave as designed; it says nothing about how accurate YouCam's skin scores are. No YouCam calls, no units spent. The LLM cases use a scripted stand-in provider (no network): they test the fallback and the claim validator, not any real model.
 
 Run: `cd backend; python -m benchmark` (also runs under `python -m pytest`).
 
@@ -11,22 +11,19 @@ Run: `cd backend; python -m benchmark` (also runs under `python -m pytest`).
 | Avoided ingredient is blocked, with the label line | 6 / 6 |
 | Synonyms are still blocked | 6 / 6 |
 | Incomplete INCI is unknown, never pass | 5 / 5 |
+| No exclusions recorded: nothing to check, never a pass | 7 / 7 |
 | Product-level reaction blocks that product only | 4 / 4 |
-| Add switched to replace recalculates | 5 / 5 |
+| Add switched to replace recalculates | 8 / 8 |
 | Several changes: can't tell | 4 / 4 |
 | Overlap: no detectable change | 5 / 5 |
-| Different conditions: not comparable, re-guide | 10 / 10 |
+| Different conditions: not comparable, re-guide | 12 / 12 |
 | Symptoms outrank improved scores | 6 / 6 |
 | Unresolved stop symptom persists | 4 / 4 |
 | Missing baseline: no trend claim | 4 / 4 |
 | Wording never claims cause | 2 / 2 |
-
-## Not benchmarked yet
-
-| Design row | Why |
-| --- | --- |
-| LLM down or draft rejected: templates shown, core flow unaffected | No LLM layer is built yet. All on-screen wording is fixed template text, so the core flow never depends on an LLM. |
-| LLM draft says "caused by": validator rejects it | No LLM layer or claim validator is built yet. The 'Wording never claims cause' cases check the fixed templates instead. |
+| LLM down or draft rejected: templates shown, core flow unaffected | 7 / 7 |
+| LLM draft overclaims ("caused by" etc.): validator rejects it | 6 / 6 |
+| LLM intake proposes; the user confirms | 5 / 5 |
 
 ## All cases
 
@@ -62,12 +59,24 @@ Run: `cd backend; python -m benchmark` (also runs under `python -m pytest`).
 | inc-04 | Incomplete list that does list the avoided ingredient: blocked | pass |
 | inc-05 | Compare column lists it under unknowns and doesn't call it blocked | pass |
 
+### No exclusions recorded: nothing to check, never a pass
+
+| Case | Checks | Result |
+| --- | --- | --- |
+| nt-01 | No records at all: a complete product is 'nothing to check' | pass |
+| nt-02 | Every catalog product with no records: none says 'pass' | pass |
+| nt-03 | The reason says it is not a pass | pass |
+| nt-04 | Incomplete list, no exclusions: nothing to check AND tagged incomplete | pass |
+| nt-05 | Incomplete list, avoid fragrance: unknown AND tagged incomplete | pass |
+| nt-06 | Incomplete list that lists the avoided ingredient: blocked AND tagged incomplete | pass |
+| nt-07 | A complete list is never tagged incomplete | pass |
+
 ### Product-level reaction blocks that product only
 
 | Case | Checks | Result |
 | --- | --- | --- |
 | pr-01 | Reaction to Velvet Rose blocks Velvet Rose | pass |
-| pr-02 | Rose toner sharing Linalool is not blocked (no ingredient allergy invented) | pass |
+| pr-02 | Rose toner sharing Linalool is not blocked (no ingredient allergy invented); with no ingredient exclusions it is 'nothing to check' | pass |
 | pr-03 | A reaction record must name a product | pass |
 | pr-04 | API stores one product-level record, no ingredient | pass |
 
@@ -80,6 +89,9 @@ Run: `cd backend; python -m benchmark` (also runs under `python -m pytest`).
 | ar-03 | New spend counts only the new product (Rs 650) either way | pass |
 | ar-04 | Unanswered: asks 'replace or add', naming both products | pass |
 | ar-05 | Answered 'replace': the question goes away | pass |
+| ar-06 | Add: 5 steps after, stop using nothing | pass |
+| ar-07 | Replace: 4 steps after, stop using the Daily Barrier Cream | pass |
+| ar-08 | 'Replace' with nothing in that role adds a step and stops nothing | pass |
 
 ### Several changes: can't tell
 
@@ -112,6 +124,8 @@ Run: `cd backend; python -m benchmark` (also runs under `python -m pytest`).
 | nc-06 | Ten hours later | pass |
 | nc-07 | SD baseline vs HD check-in | pass |
 | nc-08 | Every mismatch carries a re-guide fix | pass |
+| nc-11 | Same label source (both live camera), different camera: fails | pass |
+| nc-12 | Photo-file label vs live-camera label: device 'not compared', pair still comparable | pass |
 | nc-09 | Not comparable outranks big score gains | pass |
 | nc-10 | Small light change within tolerance stays comparable | pass |
 
@@ -150,4 +164,37 @@ Run: `cd backend; python -m benchmark` (also runs under `python -m pytest`).
 | --- | --- | --- |
 | wd-01 | No verdict text says 'caused' or 'because of' | pass |
 | wd-02 | Strongest result says 'during the trial' and 'does not prove' | pass |
+
+### LLM down or draft rejected: templates shown, core flow unaffected
+
+| Case | Checks | Result |
+| --- | --- | --- |
+| llm-01 | LLM off: explanation is the template | pass |
+| llm-02 | Provider times out twice (one retry): template | pass |
+| llm-03 | Rejected draft: template shown | pass |
+| llm-04 | A clean draft passes and is used | pass |
+| llm-05 | API, LLM off: evidence and explanation work, template text | pass |
+| llm-06 | API, provider failing: same template, core flow unaffected | pass |
+| llm-07 | Intake output that isn't JSON is rejected: no proposals | pass |
+
+### LLM draft overclaims ("caused by" etc.): validator rejects it
+
+| Case | Checks | Result |
+| --- | --- | --- |
+| llm-08 | Draft says 'caused by' | pass |
+| llm-09 | Draft says 'thanks to' | pass |
+| llm-10 | Draft names a diagnosis | pass |
+| llm-11 | Draft names a product not in the record | pass |
+| llm-12 | Draft claims improvement when the verdict is 'no detectable change' | pass |
+| llm-13 | Draft gives a number not in the record | pass |
+
+### LLM intake proposes; the user confirms
+
+| Case | Checks | Result |
+| --- | --- | --- |
+| llm-14 | Example text: product reaction + clinician-confirmed lanolin allergy | pass |
+| llm-15 | Unmatched product stays as typed text and needs confirmation | pass |
+| llm-16 | LLM attaches an ingredient to a product reaction: dropped, stays product-level | pass |
+| llm-17 | Allergy with no clinician in the text: proposed as 'avoid', type needs confirmation | pass |
+| llm-18 | API intake proposes but saves nothing | pass |
 

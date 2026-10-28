@@ -29,7 +29,7 @@ All evidence decisions use `raw_score`. YouCam's docs describe `ui_score` as adj
 cd backend
 pip install -r requirements.txt
 cp .env.example .env          # add YOUCAM_API_KEY
-python -m pytest -q           # 163 tests, no API units spent
+python -m pytest -q           # 235 tests, no API units spent, no LLM calls
 python -m benchmark           # evidence benchmark: pass counts, writes results/benchmark.md
 uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload   # http://127.0.0.1:8000/docs
 ```
@@ -88,28 +88,46 @@ Results go to `backend/results/` (`report.md` for the README and video, raw resp
 
 What to report: Experiment 1's range per concern ("with nothing changed, redness moved across N points") and Experiment 2's shift beside that range. Then set `TOLERANCES` and `MIN_BAND` in `app/evidence.py` from what you measured.
 
+## Optional LLM layer
+
+Off by default (`LLM_PROVIDER=none`), and the app works fully without it. The AI only extracts and words things; rules decide. Verdicts and exclusion checks never go through it.
+
+- **Intake** (`app/llm/intake.py`): free text → proposed records using the three record types. Strict JSON schema; every record must quote the user's words; products match the catalog only (unknown names stay as typed, unmatched); a product reaction never becomes an ingredient record; "confirmed allergy" only when the text says a clinician confirmed it. Unclear fields are marked "needs confirmation" and nothing saves until the user confirms each record.
+- **Explanations** (`app/llm/explain.py`): the LLM sees only the stored structured result. The claim validator rejects causal wording, diagnosis words, products or ingredients not in the record, a verdict stronger than the stored one, and numbers not in the record. On rejection the template sentence shows and only the reason code is logged.
+- **Providers** (`app/llm/providers.py`): 12 s timeout (`LLM_TIMEOUT`) plus one retry; any failure falls back silently to templates. Keys come from the environment only and are never logged.
+
+| Env var | Value |
+| --- | --- |
+| `LLM_PROVIDER` | `none` (default) · `anthropic` · `openai_compatible` |
+| `ANTHROPIC_API_KEY` | for `anthropic` (`LLM_MODEL` optional, default `claude-haiku-5-5`) |
+| `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY` | for `openai_compatible`: Groq, Gemini's OpenAI endpoint, or local Ollama (`http://127.0.0.1:11434/v1`, no key) |
+
 ## Results
 
 ### Evidence benchmark
 
-**61 of 61 cases pass** across 12 categories. Run it with `cd backend; python -m benchmark`; the full table is in [backend/results/benchmark.md](backend/results/benchmark.md).
+**91 of 91 cases pass** across 16 categories. Run it with `cd backend; python -m benchmark`; the full table is in [backend/results/benchmark.md](backend/results/benchmark.md).
 
-We wrote this benchmark ourselves, so it is **not an independent evaluation**. Each case's expected output comes from the design doc, written before running the engine. It shows the exclusion, comparison and verdict rules behave as designed. It says nothing about how accurate YouCam's scores are. Two rows of the design's benchmark table aren't covered yet because there is no LLM layer: LLM fallback, and the claim validator.
+We wrote this benchmark ourselves, so it is **not an independent evaluation**. Each case's expected output comes from the design doc, written before running the engine. It shows the exclusion, comparison and verdict rules behave as designed. It says nothing about how accurate YouCam's scores are. The LLM cases use a scripted stand-in provider with good and bad outputs (no network), so they test the fallback and the claim validator, not any real model.
 
 | Category | Cases |
 | --- | --- |
 | Avoided ingredient is blocked, with the label line | 6 / 6 pass |
 | Synonyms are still blocked | 6 / 6 pass |
 | Incomplete INCI is unknown, never pass | 5 / 5 pass |
+| No exclusions recorded: nothing to check, never a pass | 7 / 7 pass |
 | Product-level reaction blocks that product only | 4 / 4 pass |
-| Add switched to replace recalculates | 5 / 5 pass |
+| Add switched to replace recalculates | 8 / 8 pass |
 | Several changes: can't tell | 4 / 4 pass |
 | Overlap: no detectable change | 5 / 5 pass |
-| Different conditions: not comparable, re-guide | 10 / 10 pass |
+| Different conditions: not comparable, re-guide | 12 / 12 pass |
 | Symptoms outrank improved scores | 6 / 6 pass |
 | Unresolved stop symptom persists | 4 / 4 pass |
 | Missing baseline: no trend claim | 4 / 4 pass |
 | Wording never claims cause | 2 / 2 pass |
+| LLM down or draft rejected: templates shown, core flow unaffected | 7 / 7 pass |
+| LLM draft overclaims ("caused by" etc.): validator rejects it | 6 / 6 pass |
+| LLM intake proposes; the user confirms | 5 / 5 pass |
 
 ### Experiments 1 and 2
 
@@ -123,10 +141,12 @@ Not run yet. Numbers will go here from `backend/results/report.md`.
 | GET | `/api/catalog` | 25 fictional products with INCI lists |
 | PUT/GET | `/api/shelf` | Current routine |
 | POST/GET/DELETE | `/api/history` | Reaction / avoid / confirmed-allergy records |
+| POST | `/api/history/intake` | Free text → PROPOSED records (optional LLM). Saves nothing; each is confirmed through `POST /api/history` |
 | POST | `/api/compare` | Change nothing vs up to 3 options, with exclusion checks and the next question that matters |
 | POST | `/api/scan` | Photo → fingerprint → YouCam (or replay) → stored capture; check-ins get an instant comparability check. Optional `client_hour` (0-23) and `client_device` form fields are used when the photo has no EXIF |
 | POST | `/api/trials` | Start a one-change trial (blocked products refused) |
 | POST | `/api/trials/{id}/checkin` | Log symptoms and any other new products |
+| GET | `/api/trials/{id}/explanation` | 1-3 plain sentences about the stored result, checked by the claim validator; the verdict template when the LLM is off, fails or is rejected |
 | GET | `/api/trials/{id}/evidence` | Verdict, ranges, comparability (per field: checked / failed with reason and fix), every scan with its own gate result, reactions |
 | POST | `/api/trials/{id}/reactions/{rid}/resolve` | Mark a reported reaction resolved (`resolved_on` date, optional `note`). A stop symptom keeps the verdict at Stop until this is done |
 | DELETE | `/api/captures` | Delete every saved scan on this server (scores, capture conditions, saved masks) and re-request YouCam task delete for live scans not yet confirmed deleted. The photo itself is never kept |

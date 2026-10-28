@@ -1,6 +1,3 @@
-# Only for scripts/crop_faces.py and the face-size check in scripts/run_experiments.py.
-# Not needed by the app. Install into backend/.venv:
-#   .venv\Scripts\python -m pip install --no-cache-dir -r requirements-experiments.txt
+# The experiment scripts use the app's own face crop, so they need nothing beyond the app:
+#   .venv\Scripts\python -m pip install --no-cache-dir -r requirements.txt
 -r requirements.txt
-mediapipe>=0.10.20
-numpy>=2

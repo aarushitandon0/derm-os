@@ -19,6 +19,7 @@ import json
 import logging
 import mimetypes
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -46,7 +47,7 @@ HD_ACTIONS = {
 IMAGE_ERRORS = {
     "error_below_min_image_size": "Photo resolution is too low. Use the phone camera (HD needs 1080 px on the short side).",
     "error_exceed_max_image_size": "Photo is too large. Try again with a smaller image.",
-    "error_src_face_too_small": "Move closer: your face should fill at least 60% of the frame width.",
+    "error_src_face_too_small": "Hold the phone a little closer.",
     "error_src_face_out_of_bound": "Centre your face so it is fully inside the frame.",
     "error_lighting_dark": "It's too dark. Face a window or a bright, even light.",
     "error_no_face": "No face found. Look straight at the camera.",
@@ -58,6 +59,18 @@ class YouCamError(RuntimeError):
         super().__init__(message)
         self.code = code
         self.friendly = friendly or message
+
+
+def actions_for_mode(actions: list[str], mode: str) -> list[str]:
+    """The same concerns named for SD or HD (hd_ prefix; SD dark_circle_v2 is HD hd_dark_circle)."""
+    out = []
+    for a in actions:
+        base = a[3:] if a.startswith("hd_") else a
+        if mode == "hd":
+            out.append("hd_dark_circle" if base in ("dark_circle_v2", "dark_circle") else f"hd_{base}")
+        else:
+            out.append("dark_circle_v2" if base == "dark_circle" else base)
+    return out
 
 
 def validate_actions(actions: list[str]) -> str:
@@ -213,6 +226,33 @@ class YouCamClient:
     def unit_balance(self) -> float | None:
         return parse_balance(self.credit())
 
+    def feature_costs(self, max_pages: int = 20) -> list[dict[str, Any]]:
+        """Every SKU from GET /s2s/v2.0/credit/feature-cost (free, read-only), following
+        `starting_token` pages."""
+        skus: list[dict[str, Any]] = []
+        token = None
+        for _ in range(max_pages):
+            body = self._request("GET", "/s2s/v2.0/credit/feature-cost",
+                                 params={"starting_token": token} if token else None)
+            res = body.get("result") or body.get("data") or {}
+            page = res.get("skus") or []
+            skus += page
+            token = res.get("next_token")
+            if not token or not page:
+                break
+        return skus
+
+    def scan_cost(self, actions: list[str]) -> tuple[float, str]:
+        """Exact units one skin-analysis task with these actions costs, and where the price came
+        from ("price list" = read live from YouCam now, "built-in" = PRICE_FALLBACK)."""
+        if getattr(self, "_prices", None) is None:
+            try:
+                self._prices = parse_skin_prices(self.feature_costs())
+            except Exception as e:  # noqa: BLE001 - fall back to the built-in table
+                log.warning("Feature-cost list unavailable (%s); using the built-in price table.", type(e).__name__)
+                self._prices = {}
+        return scan_cost_from(self._prices, self.version, actions)
+
     # -- workflow ------------------------------------------------------------
     def upload(self, image_path: str | Path) -> str:
         p = Path(image_path)
@@ -345,14 +385,51 @@ def parse_balance(body: Any) -> float | None:
     return None
 
 
+# ---------------------------------------------------------------- prices
+# Tiered by the number of concerns in one task, from GET /s2s/v2.0/credit/feature-cost
+# (read 2026-10-28). Only used when the live list can't be read or has no matching entry.
+PRICE_FALLBACK: dict[tuple[str, str], list[tuple[int, int, float]]] = {
+    ("2.1", "sd"): [(1, 4, 9.0), (5, 8, 12.0), (9, 12, 14.0), (13, 16, 16.0)],
+    ("2.1", "hd"): [(1, 4, 12.0), (5, 8, 16.0), (9, 12, 20.0), (13, 16, 22.0)],
+    ("2.0", "sd"): [(1, 4, 9.0), (5, 8, 12.0), (9, 12, 14.0), (13, 16, 16.0)],
+    ("2.0", "hd"): [(1, 4, 12.0), (5, 8, 16.0), (9, 12, 20.0), (13, 16, 22.0)],
+}
+_SKU = re.compile(r"AI Skin Analysis V(\d+\.\d+) (SD|HD) \((\d+)\s*-\s*(\d+) concerns?\)", re.I)
+
+
+def parse_skin_prices(skus: list[dict[str, Any]]) -> dict[tuple[str, str], list[tuple[int, int, float]]]:
+    table: dict[tuple[str, str], list[tuple[int, int, float]]] = {}
+    for s in skus or []:
+        m = _SKU.search(str(s.get("description", "")))
+        amt = _num(s.get("amount"))
+        if not m or amt is None:
+            continue
+        key = (m.group(1), m.group(2).lower())
+        table.setdefault(key, []).append((int(m.group(3)), int(m.group(4)), amt))
+    return {k: sorted(v) for k, v in table.items()}
+
+
+def scan_cost_from(table: dict, version: str, actions: list[str]) -> tuple[float, str]:
+    """Units for one task. Raises ValueError if no tier covers this many concerns."""
+    mode = validate_actions(actions)
+    n = len(set(actions))
+    ver = version.lstrip("vV")
+    for src, tiers in (("price list", (table or {}).get((ver, mode))), ("built-in", PRICE_FALLBACK.get((ver, mode)))):
+        for lo, hi, amt in tiers or []:
+            if lo <= n <= hi:
+                return amt, src
+    raise ValueError(f"No price for {n} {mode.upper()} concerns on v{ver}")
+
+
 class UnitReserveError(YouCamError):
     pass
 
 
-def check_unit_reserve(client: Any, reserve: float) -> float | None:
-    """Refuse a live scan when the balance is below the reserve. If the balance can't be
-    read (network error, unknown shape), log it and allow the scan: the guard must never
-    be the reason a demo breaks."""
+def check_unit_reserve(client: Any, reserve: float, cost: float | None = None) -> float | None:
+    """Refuse a live scan when the balance can't pay for it (`cost`, the exact price of this
+    scan) or when paying would leave less than `reserve`. If the balance can't be read
+    (network error, unknown shape), log it and allow the scan: the guard must never be the
+    reason a demo breaks, and YouCam itself refuses a scan the account can't pay for."""
     try:
         bal = client.unit_balance()
     except Exception as e:  # noqa: BLE001 - any failure here is non-fatal by design
@@ -361,11 +438,18 @@ def check_unit_reserve(client: Any, reserve: float) -> float | None:
     if bal is None:
         log.warning("Unit balance response had no recognisable balance; continuing without the guard.")
         return None
-    if bal < reserve:
+    c = cost or 0.0
+    if bal < c:
         raise UnitReserveError(
-            f"Unit balance {bal:g} is below reserve {reserve:g}", code="unit_reserve",
-            friendly=(f"Live scans are paused: {bal:g} YouCam units left, below the reserve of {reserve:g} "
-                      "kept for the demo. Turn on DEMO_MODE=1 to replay recorded scans, or top up units."))
+            f"Unit balance {bal:g} can't pay for this scan ({c:g})", code="unit_reserve",
+            friendly=(f"Live scans are paused: this scan costs {c:g} YouCam units and {bal:g} are left. "
+                      "Turn on DEMO_MODE=1 to replay recorded scans, or top up units."))
+    if bal - c < reserve:
+        raise UnitReserveError(
+            f"Unit balance {bal:g} minus this scan ({c:g}) is below reserve {reserve:g}", code="unit_reserve",
+            friendly=(f"Live scans are paused: this scan costs {c:g} YouCam units, {bal:g} are left, and "
+                      f"{reserve:g} are kept in reserve for the demo. Turn on DEMO_MODE=1 to replay recorded "
+                      "scans, or top up units."))
     return bal
 
 

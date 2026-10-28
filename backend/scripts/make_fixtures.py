@@ -131,7 +131,14 @@ def main() -> int:
 
     res, fix = Path(a.results), Path(a.fixtures) / a.persona
     photos = Path(a.photos) if Path(a.photos).is_dir() else None
-    stems = sorted(p.stem for p in res.glob("*.json") if p.stem not in ("report", "benchmark"))
+    # Results made from palette PNGs (results/legacy_palette.json) are never turned into fixtures.
+    marker = res / "legacy_palette.json"
+    legacy = {Path(f).stem for f in json.loads(marker.read_text()).get("files", [])} if marker.exists() else set()
+    stems = sorted(p.stem for p in res.glob("*.json")
+                   if p.stem not in ("report", "benchmark", "legacy_palette") and not p.stem.endswith(".source")
+                   and p.stem not in legacy)
+    if legacy:
+        print(f"Skipping palette-image results: {', '.join(sorted(legacy))}")
     if not stems:
         print(f"No result files in {res}. Run scripts/run_experiments.py first.")
         return 1

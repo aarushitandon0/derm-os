@@ -147,14 +147,26 @@ def api(scores: list[float] = ()):
                         {"type": a, "raw_score": next(queue)} for a in actions]}}}, "sd", actions, None)
 
             m.YouCamClient = lambda: FakeYouCam()
+            # The sandbox photo is a plain colour, so a stand-in detector reports one centred face
+            # (the benchmark tests the evidence rules, not face detection; see tests/test_facecrop.py).
+            from app import facecrop
+            facecrop.set_detector(_centred_face)
             # "Live" here means the fake above: the passcode only routes scans to it.
             yield TestClient(m.app, headers={"X-Live-Passcode": "bench"})
         finally:
+            from app import facecrop
+            facecrop.set_detector(None)
             for k, v in old.items():
                 if v is None:
                     os.environ.pop(k, None)
                 else:
                     os.environ[k] = v
+
+
+def _centred_face(img):
+    from app.facecrop import Box
+    w, h = img.size
+    return [Box(w / 4, h * 0.45 - w * 0.275, w / 2, w * 0.55, 0.99)]
 
 
 def _jpg() -> bytes:

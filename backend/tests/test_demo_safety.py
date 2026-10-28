@@ -66,7 +66,8 @@ def test_demo_mode_replays_fixtures_in_rotation_without_calling_youcam(app_modul
     assert [x["raw_scores"]["redness"] for x in caps] == [60.0, 62.0, 61.0, 60.0]
     assert all(x["source"] == "replay" and x["replay"]["synthetic"] for x in caps)
     # Fingerprint still comes from the real uploaded pixels.
-    assert caps[0]["fingerprint"]["width"] == 720
+    # Measured from the real upload: the original size is kept, the gate sees the normalised capture.
+    assert caps[0]["fingerprint"]["original_width"] == 720 and caps[0]["fingerprint"]["width"] == 480
     # Recorded masks are copied into media and served.
     url = caps[0]["masks"]["redness"][0]
     assert url.startswith("/media/") and c.get(url).content == PNG

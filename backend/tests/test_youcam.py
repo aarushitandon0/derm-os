@@ -98,4 +98,4 @@ def test_task_error_maps_to_friendly_message(tmp_path):
     c.poll_sleep = lambda s: None
     with pytest.raises(YouCamError) as e:
         c.analyze(_photo(tmp_path), ["redness"])
-    assert "60%" in e.value.friendly
+    assert e.value.friendly == "Hold the phone a little closer."

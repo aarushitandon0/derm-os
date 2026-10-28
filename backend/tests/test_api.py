@@ -74,7 +74,9 @@ def test_low_resolution_rejected_before_api_call(client):
     b = io.BytesIO()
     Image.new("RGB", (300, 400)).save(b, "JPEG")
     r = client.post("/api/scan", files={"image": ("s.jpg", b.getvalue(), "image/jpeg")}, data={"actions": "redness"})
-    assert r.status_code == 422 and "480" in r.json()["detail"]
+    # Too few pixels for the face to reach SD's size without upscaling: one plain fix, nothing sent.
+    assert r.status_code == 422
+    assert r.json()["detail"] == {"code": "too_far", "message": "Hold the phone a little closer."}
 
 
 def test_ui_read_endpoints(client):

@@ -182,7 +182,7 @@ derm//os is organised around one object, the **Trial** : a single skincare chang
 
 4. **Capture** — live camera with a checklist that turns green: face size, straight on, even light, no glasses. Baseline mode takes the 3-scan burst automatically. 
 
-5. **Compare** — four columns (Change nothing, Current, A, B). Rows: steps, added / replaced / kept, new spend, overlapping roles, exclusion check (pass / blocked + reason / unknown), information gaps. One highlighted question when its answer would change the table ("Is the new moisturiser replacing yours or added?"). 
+5. **Compare** — four columns (Change nothing, Current, A, B). Rows: steps, added / replaced / kept, new spend, overlapping roles, exclusion check (pass / blocked + reason / unknown / nothing to check against yet, plus an "ingredient list incomplete" tag whenever the label is incomplete), information gaps. One highlighted question when its answer would change the table ("Is the new moisturiser replacing yours or added?"). 
 
 6. **Trial card** — "Testing: Serum B for redness. Holding fixed: everything else. Check-ins: day 14, day 28. Stop if: burning, swelling, itching that persists." 
 
@@ -271,7 +271,7 @@ The evidence engine is the part no competitor has; everything else is solid, con
 
 - **Exclusions:** exact match on normalised INCI against "avoid" and "confirmed" records → blocked with the matching line shown. Product-level reactions block that product only. Incomplete INCI → unknown. 
 
-- **Routine builder:** applies an option to the current routine as add or replace per role, then lists retained / replaced / added, new spend, and duplicate roles. "Change nothing" is always a column. 
+- **Routine builder:** applies an option to the current routine as add or replace per role, then lists retained / replaced / added, steps after the change, products you stop using, duplicate roles, and new spend. New spend is the new product's price in both modes, because you buy it either way; switching add to replace changes the steps, what you stop using and the duplicates, not the spend. "Change nothing" is always a column. 
 
 - **Next best question:** among unanswered questions, ask the one whose possible answers would change the comparison table; skip the rest. 
 
@@ -323,7 +323,7 @@ About 40 fixture cases with expected outputs, reported as pass counts. Like Skin
 |Synonym ("parfum" vs "fragrance")|Still blocked|
 |INCI list incomplete|"Unknown", never "pass"|
 |Product-level reaction recorded|That product blocked; no ingredient allergy created|
-|Add switched to replace|Routine, spend, and explanation all update|
+|Add switched to replace|Routine, steps after, products you stop using, duplicate roles and explanation update; new spend stays the new product's price|
 |Two leave-on products started together|"Can't tell — several changes"|
 |Follow-up range overlaps baseline|"No detectable change yet"|
 |Different light or face size|"Not comparable" and re-guide|

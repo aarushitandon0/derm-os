@@ -4,7 +4,7 @@
 //   - symptoms outrank scores
 //   - unknown is never a pass
 //   - decision support, never diagnosis
-import type { CheckStatus, ConditionField, RecordType, VerdictCode } from "./api";
+import type { Capture, CheckStatus, ConditionField, Place, RecordType, VerdictCode } from "./api";
 
 export type Tone = "stop" | "unsure" | "steady" | "moved";
 
@@ -206,4 +206,52 @@ export const fmtTime = (iso: string | Date) =>
 export const localISODate = (d: Date = new Date()) => {
   const p = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+};
+
+// ------------------------------------------------------------------ capture
+// The method, said once in the same words on the Learn page and in the README.
+export const NORMALISE_LINE =
+  "Each photo is cropped and scaled the same way, so your distance from the camera doesn't change the comparison.";
+
+// Optional, asked during the baseline so a check-in can say where it was. Never guessed from pixels.
+export const PLACES: { value: Place; label: string; phrase: string | null }[] = [
+  { value: "window", label: "By a window", phrase: "by a window" },
+  { value: "ceiling", label: "Ceiling light", phrase: "under a ceiling light" },
+  { value: "lamp", label: "Lamp", phrase: "under a lamp" },
+  { value: "outdoors", label: "Outdoors", phrase: "outdoors" },
+  { value: "other", label: "Somewhere else", phrase: null },
+];
+
+/** "9 am", "noon", "3 pm". */
+export function hourLabel(h: number): string {
+  if (h === 0) return "midnight";
+  if (h === 12) return "noon";
+  return h < 12 ? `${h} am` : `${h - 12} pm`;
+}
+
+/**
+ * "Your first photos: by a window, around 9 am" from the baseline captures, using only what
+ * was recorded (the place the user chose, the capture hour). Null when neither is known.
+ */
+export function baselineWhere(baseline: Pick<Capture, "place" | "fingerprint">[]): string | null {
+  const place = baseline.map((c) => c.place).find(Boolean);
+  const phrase = PLACES.find((p) => p.value === place)?.phrase ?? null;
+  const hours = baseline.map((c) => c.fingerprint?.captured_hour).filter((h): h is number => typeof h === "number");
+  const hour = hours.length ? hours[0] : null;
+  const bits = [phrase, hour !== null ? `around ${hourLabel(hour)}` : null].filter(Boolean);
+  return bits.length ? `Your first photos: ${bits.join(", ")}` : null;
+}
+
+export const CAPTURE = {
+  baselineLede: "We'll take 3 photos on our own. Look away and back between them.",
+  checkinLede: "Two photos in the same spot and light as your baseline.",
+  sameSpot: "The same spot and time of day work best.",
+  lookAway: (n: number, total: number) => `Photo ${n} of ${total} saved. Look away for a moment, then back at the camera.`,
+  holdStill: "Hold still: taking the photo.",
+  auto: "The photo takes itself when the checks hold steady. Or tap.",
+  waiting: "The shutter waits for the checks above.",
+  placeQuestion: "Where are you taking these? (optional)",
+  placeWhy: "So your check-ins can remind you.",
+  cameraTooSmall:
+    "This camera's picture is too small for a scan, even up close. Open derm//os on your phone instead.",
 };

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, ApiError, livePasscode, setLivePasscode, type VerdictCode } from "../api";
-import { DELETE_SCANS, deletedSummary, NOT_DIAGNOSIS, PRIVACY, REACTION_RULE, VERDICT } from "../copy";
+import { DELETE_SCANS, deletedSummary, NORMALISE_LINE, NOT_DIAGNOSIS, PRIVACY, REACTION_RULE, VERDICT } from "../copy";
 import { Icon } from "../components/Icon";
 import { Btn, NavBar, Notice, PageHead, Section } from "../components/ui";
 import { useStore } from "../store";
@@ -66,13 +66,18 @@ export default function Learn({ section }: { section?: string | null }) {
 
       <Section label="The comparability gate">
         <p className="prose">
-          Every photo carries a fingerprint of how it was taken: light level and colour, how much of the frame your face fills,
-          head angle, camera and time of day. A check-in is only compared with your baseline when these match.
+          Every photo carries a fingerprint of how it was taken: light level and colour, face size, head angle, camera and time
+          of day. A check-in is only compared with your baseline when these match.
+        </p>
+        <p className="prose">
+          {NORMALISE_LINE} Before anything is measured, the photo is cropped around your face and scaled down so your face is
+          the same number of pixels wide every time. It is never enlarged, and its colour, brightness and angle are never
+          changed. Your original face size is kept with the photo's record.
         </p>
         {tol && (
           <ul className="bullets">
             <li>Brightness within {tol.luminance} on a 0 to 1 scale, light colour within {Math.round(tol.red_blue_ratio * 100)}%.</li>
-            <li>Face size within {Math.round(tol.face_ratio * 100)}% of the frame width.</li>
+            <li>Face size within {Math.round(tol.face_ratio * 100)}% of the frame width, measured after the crop.</li>
             <li>Head angle within {tol.angle}° each way.</li>
             <li>Same camera, and within {tol.hour} hours of the same time of day, when the photo records them.</li>
           </ul>

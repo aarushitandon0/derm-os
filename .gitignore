@@ -9,6 +9,9 @@ backend/.env
 photos/
 backend/photos/
 backend/media/
+# Downloaded face-detector weights (fetched on first use)
+backend/scripts/models/
+backend/app/models/
 # Experiment output: raw YouCam responses (with mask URLs) and downloaded masks stay local.
 # Only the two human-readable summaries are tracked.
 backend/results/*

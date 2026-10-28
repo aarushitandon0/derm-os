@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { api, type Trial } from "../api";
-import { MILD_SYMPTOMS, REACTION_RULE, symptomLabel } from "../copy";
+import { api, type Capture, type Trial } from "../api";
+import { baselineWhere, CAPTURE, MILD_SYMPTOMS, REACTION_RULE, symptomLabel } from "../copy";
 import { Btn, Loading, Notice, PageHead, Section, TopBar } from "../components/ui";
 import { go } from "../router";
 import { useStore } from "../store";
@@ -14,9 +14,12 @@ export default function Checkin({ id }: { id: string }) {
   const [none, setNone] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [baseline, setBaseline] = useState<Capture[]>([]);
 
   useEffect(() => {
     api.trial(id).then(setT, (e) => setErr((e as Error).message));
+    // Where and when the baseline was taken, so the check-in can be taken the same way.
+    api.evidence(id).then((ev) => setBaseline(ev.captures.baseline), () => undefined);
   }, [id]);
 
   if (!t) return <div className="page"><TopBar back={`/trial/${id}`} />{err ? <Notice tone="stop">{err}</Notice> : <Loading />}</div>;
@@ -42,6 +45,7 @@ export default function Checkin({ id }: { id: string }) {
   };
 
   const answered = none || sym.length > 0;
+  const where = baselineWhere(baseline);
 
   return (
     <div className="page">
@@ -115,6 +119,14 @@ export default function Checkin({ id }: { id: string }) {
           </ul>
         )}
       </Section>
+
+      {where && (
+        <Section label="Before you scan">
+          <p className="prose">
+            {where}. {CAPTURE.sameSpot}
+          </p>
+        </Section>
+      )}
 
       {err && <Notice tone="stop">{err}</Notice>}
       <div className="actions">

@@ -174,6 +174,13 @@ export interface Fingerprint {
   // Where device / hour came from: the photo's EXIF, or the phone at capture time.
   device_source?: "exif" | "client" | null;
   hour_source?: "exif" | "client" | null;
+  // Every capture is cropped and scaled the same way first; both face sizes are kept.
+  face_px?: number | null; // in the normalised capture (the same for every capture in a mode)
+  face_px_original?: number | null;
+  face_pct_original?: number | null; // % of the original photo's width
+  original_width?: number | null;
+  original_height?: number | null;
+  face_ratio_live?: number | null;
 }
 
 export interface Capture {
@@ -186,7 +193,11 @@ export interface Capture {
   fingerprint: Fingerprint;
   raw_scores: Record<string, number>;
   mode: string;
+  place?: Place | null;
 }
+
+/** Where the baseline was taken, if the user said. Never inferred. */
+export type Place = "window" | "ceiling" | "lamp" | "outdoors" | "other";
 
 export interface Evidence {
   trial: Trial;
@@ -246,6 +257,8 @@ export interface Meta {
   verdict_text: Record<VerdictCode, string>;
   tolerances: Record<string, number>;
   min_band: number;
+  // The server's crop and scale (app/facecrop.py), so the live guide uses the same numbers.
+  capture?: { face_frac: number; target_face_px: Record<"sd" | "hd", number>; output: Record<"sd" | "hd", number[]> };
 }
 
 export class ApiError extends Error {
@@ -329,6 +342,7 @@ export interface ScanInput {
   // Live camera shots only: canvas JPEGs carry no EXIF, so the phone says when and with what.
   clientHour?: number | null;
   clientDevice?: string | null;
+  place?: Place | null;
 }
 
 export const api = {
@@ -376,6 +390,7 @@ export const api = {
     if (s.clientDevice) f.append("client_device", s.clientDevice);
     if (s.persona) f.append("persona", s.persona);
     if (s.fixtureSet) f.append("fixture_set", s.fixtureSet);
+    if (s.place) f.append("place", s.place);
     return scanRequest(f, onUploaded);
   },
 };

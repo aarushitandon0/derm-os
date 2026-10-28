@@ -9,16 +9,44 @@ const MODEL =
   "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
 
 // Thresholds for the live guide (not the comparability gate, which is server-side).
+// Face SIZE is no longer a framing rule for the user: the server crops and scales every photo
+// the same way. The live check only makes sure the face is big enough for that (no upscaling)
+// and that the crop fits inside the frame.
 export const GUIDE = {
-  faceMin: 0.6,
-  faceMax: 0.8,
   yawMax: 8,
   pitchMax: 10,
   rollMax: 6,
   lumaMin: 0.28,
   lumaMax: 0.85,
   sideImbalanceMax: 0.18,
+  // The browser's landmark box and the server's detector box differ a little, so the live
+  // estimate has to clear the server's target with room to spare.
+  sizeMargin: 1.1,
+  fitMargin: 0.97,
 };
+
+/** The server's crop rule (GET /api/meta -> capture), with the SD numbers as a fallback. */
+export interface CaptureRule {
+  faceFrac: number;
+  targetFacePx: number;
+}
+export const DEFAULT_RULE: CaptureRule = { faceFrac: 0.75, targetFacePx: 360 };
+
+/** Average light of the trial's baseline photos, from their fingerprints. */
+export interface BaselineLight {
+  luma: number;
+  warmth: number;
+}
+export interface LightTolerance {
+  luminance: number;
+  red_blue_ratio: number;
+}
+
+export interface GuideContext {
+  width: number; // camera frame, px
+  height: number;
+  rule: CaptureRule;
+}
 
 let landmarkerPromise: Promise<FaceLandmarker> | null = null;
 
@@ -89,14 +117,33 @@ export function faceMetrics(res: FaceLandmarkerResult): FaceMetrics {
 }
 
 export interface LightMetrics {
-  luma: number; // 0..1, face region (or centre if no face)
+  luma: number; // 0..1, cheek band of the face (or centre if no face)
   imbalance: number; // |left - right| / max
   warmth: number; // red / blue
+  // Measured the way the server measures the fingerprint: the central region of the crop the
+  // server would make (3:4 around the face, face at faceFrac of the width). Compared with the
+  // baseline using the gate's own tolerances.
+  gateLuma: number | null;
+  gateWarmth: number | null;
 }
 
 const sampler = typeof document !== "undefined" ? document.createElement("canvas") : null;
 
-export function lightMetrics(video: HTMLVideoElement, box: FaceMetrics["box"]): LightMetrics | null {
+function meanRGB(ctx: CanvasRenderingContext2D, x0: number, y0: number, x1: number, y1: number) {
+  const w = Math.max(1, Math.round(x1 - x0));
+  const h = Math.max(1, Math.round(y1 - y0));
+  const { data } = ctx.getImageData(Math.round(x0), Math.round(y0), w, h);
+  let R = 0, G = 0, B = 0;
+  const n = data.length / 4;
+  for (let i = 0; i < data.length; i += 4) {
+    R += data[i];
+    G += data[i + 1];
+    B += data[i + 2];
+  }
+  return { r: R / n, g: G / n, b: B / n };
+}
+
+export function lightMetrics(video: HTMLVideoElement, box: FaceMetrics["box"], rule: CaptureRule = DEFAULT_RULE): LightMetrics | null {
   if (!sampler || !video.videoWidth) return null;
   const W = 160;
   const H = Math.round((video.videoHeight / video.videoWidth) * W);
@@ -129,8 +176,49 @@ export function lightMetrics(video: HTMLVideoElement, box: FaceMetrics["box"]): 
     B += data[i + 2];
   }
   const L = l / ln, Rr = r / rn;
-  return { luma: (L + Rr) / 2, imbalance: Math.abs(L - Rr) / Math.max(L, Rr, 1e-3), warmth: B ? R / B : 99 };
+
+  let gateLuma: number | null = null;
+  let gateWarmth: number | null = null;
+  if (box) {
+    const fw = (box.x1 - box.x0) * W;
+    const cw = fw / rule.faceFrac;
+    const ch = (cw * 4) / 3;
+    if (cw <= W && ch <= H) {
+      const cx = ((box.x0 + box.x1) / 2) * W;
+      const cy = ((box.y0 + box.y1) / 2) * H;
+      const left = Math.min(Math.max(cx - cw / 2, 0), W - cw);
+      const top = Math.min(Math.max(cy - ch / 2, 0), H - ch);
+      const m = meanRGB(ctx, left + cw * 0.3, top + ch * 0.3, left + cw * 0.7, top + ch * 0.65);
+      gateLuma = (0.2126 * m.r + 0.7152 * m.g + 0.0722 * m.b) / 255;
+      gateWarmth = m.b ? m.r / m.b : 99;
+    }
+  }
+  return { luma: (L + Rr) / 2, imbalance: Math.abs(L - Rr) / Math.max(L, Rr, 1e-3), warmth: B ? R / B : 99, gateLuma, gateWarmth };
 }
+
+/**
+ * Would the comparability gate call this light different from the baseline? Same rule and
+ * tolerances as compare_conditions() in backend/app/evidence.py: brightness first, then colour.
+ */
+export type LightIssue = "darker" | "brighter" | "warmer" | "cooler";
+export function baselineLightIssue(
+  l: Pick<LightMetrics, "gateLuma" | "gateWarmth"> | null,
+  base: BaselineLight | null | undefined,
+  tol: LightTolerance | null | undefined
+): LightIssue | null {
+  if (!l || !base || !tol || l.gateLuma == null || l.gateWarmth == null) return null;
+  if (Math.abs(base.luma - l.gateLuma) > tol.luminance) return l.gateLuma < base.luma ? "darker" : "brighter";
+  if (base.warmth && Math.abs(base.warmth - l.gateWarmth) / base.warmth > tol.red_blue_ratio)
+    return l.gateWarmth > base.warmth ? "warmer" : "cooler";
+  return null;
+}
+
+export const LIGHT_ISSUE_HINT: Record<LightIssue, string> = {
+  warmer: "Warmer light than your first photos. The spot where you took them works best.",
+  cooler: "Cooler light than your first photos. The spot where you took them works best.",
+  darker: "Darker than your first photos. The spot where you took them works best.",
+  brighter: "Brighter than your first photos. The spot where you took them works best.",
+};
 
 export interface CheckItem {
   key: string;
@@ -139,24 +227,46 @@ export interface CheckItem {
   hint: string;
 }
 
-export function checklist(f: FaceMetrics | null, l: LightMetrics | null): CheckItem[] {
-  const ratio = f?.faceRatio ?? null;
-  const sizeOk = ratio !== null && ratio >= GUIDE.faceMin && ratio <= GUIDE.faceMax;
+export type FaceIssue = "none" | "several" | "edge" | "far" | "close";
+
+/** Is the face usable for the server's crop? null = fine. */
+export function faceIssue(f: FaceMetrics | null, ctx: GuideContext): FaceIssue | null {
+  if (!f || f.faces === 0 || !f.box) return "none";
+  if (f.faces > 1) return "several";
+  const { x0, x1, y0, y1 } = f.box;
+  if (x0 < 0.01 || x1 > 0.99 || y0 < 0.01 || y1 > 0.99) return "edge";
+  const facePx = (x1 - x0) * ctx.width;
+  if (facePx < ctx.rule.targetFacePx * GUIDE.sizeMargin) return "far";
+  const cw = facePx / ctx.rule.faceFrac;
+  if (cw > ctx.width * GUIDE.fitMargin || (cw * 4) / 3 > ctx.height * GUIDE.fitMargin) return "close";
+  return null;
+}
+
+const FACE_HINT: Record<FaceIssue, string> = {
+  none: "Face the camera so your whole face is in view.",
+  several: "Only one face in view, please.",
+  edge: "Move so your whole face is inside the frame.",
+  far: "Hold the phone a little closer.",
+  close: "Hold the phone a little further away.",
+};
+
+/** Can this camera ever give a face big enough for the crop without upscaling? */
+export function cameraTooSmall(width: number, height: number, rule: CaptureRule = DEFAULT_RULE): boolean {
+  const cw = (rule.targetFacePx * GUIDE.sizeMargin) / rule.faceFrac;
+  return width < cw || height < (cw * 4) / 3;
+}
+
+export function checklist(f: FaceMetrics | null, l: LightMetrics | null, ctx: GuideContext, light: LightIssue | null = null): CheckItem[] {
+  const fi = faceIssue(f, ctx);
   const poseOk =
     f?.yaw != null &&
     Math.abs(f.yaw) <= GUIDE.yawMax &&
     Math.abs(f.pitch ?? 99) <= GUIDE.pitchMax &&
     Math.abs(f.roll ?? 99) <= GUIDE.rollMax;
-  const lightOk = !!l && l.luma >= GUIDE.lumaMin && l.luma <= GUIDE.lumaMax && l.imbalance <= GUIDE.sideImbalanceMax;
+  const evenOk = !!l && l.luma >= GUIDE.lumaMin && l.luma <= GUIDE.lumaMax && l.imbalance <= GUIDE.sideImbalanceMax;
+  const lightOk = evenOk && !light;
 
-  let sizeHint = "Hold the phone so your face fills most of the frame.";
-  if (f && f.faces > 1) sizeHint = "Only one face in view, please.";
-  else if (ratio !== null && ratio < GUIDE.faceMin) sizeHint = `Move closer (${Math.round(ratio * 100)}% of width now).`;
-  else if (ratio !== null && ratio > GUIDE.faceMax) sizeHint = `Move back a little (${Math.round(ratio * 100)}% now).`;
-  else if (ratio !== null) sizeHint = `${Math.round(ratio * 100)}% of the frame width.`;
-  if (f && !f.centred && sizeOk) sizeHint = "Centre your face in the outline.";
-
-  let poseHint = "Look straight into the camera, chin level.";
+  let poseHint = "Look roughly straight at the camera.";
   if (f?.yaw != null && Math.abs(f.yaw) > GUIDE.yawMax) poseHint = "Turn your head to face the camera.";
   else if (f?.pitch != null && Math.abs(f.pitch) > GUIDE.pitchMax) poseHint = "Level your chin.";
   else if (f?.roll != null && Math.abs(f.roll) > GUIDE.rollMax) poseHint = "Keep your head upright, not tilted.";
@@ -166,12 +276,13 @@ export function checklist(f: FaceMetrics | null, l: LightMetrics | null): CheckI
   if (l && l.luma < GUIDE.lumaMin) lightHint = "Too dark. Face a window or a brighter light.";
   else if (l && l.luma > GUIDE.lumaMax) lightHint = "Too bright. Step out of direct light.";
   else if (l && l.imbalance > GUIDE.sideImbalanceMax) lightHint = "One side of your face is in shadow. Turn toward the light.";
-  else if (lightOk) lightHint = "Even light.";
+  else if (light) lightHint = LIGHT_ISSUE_HINT[light];
+  else if (lightOk) lightHint = "Light looks good.";
 
   return [
-    { key: "size", label: "Face fills 60–80% of the width", ok: sizeOk && (f?.faces ?? 0) === 1 && !!f?.centred, hint: sizeHint },
-    { key: "pose", label: "Looking straight", ok: poseOk, hint: poseHint },
-    { key: "light", label: "Even light", ok: lightOk, hint: lightHint },
+    { key: "face", label: "One face, close enough", ok: fi === null, hint: fi ? FACE_HINT[fi] : "Good distance." },
+    { key: "pose", label: "Roughly straight", ok: poseOk, hint: poseHint },
+    { key: "light", label: "Light OK", ok: lightOk, hint: lightHint },
   ];
 }
 

@@ -1013,6 +1013,91 @@ button,
   max-width: 100%;
 }
 
+/* upload photos instead (components/UploadPhotos.tsx) */
+.uploadswitch {
+  display: grid;
+  gap: 6px;
+  margin: 18px 0 0;
+}
+.filebtn {
+  position: relative;
+  cursor: pointer;
+}
+/* The real file input covers the whole button, so the tap target is the button's full size. */
+.filebtn__input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 0;
+}
+.filebtn:focus-within {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
+.filebtn.is-disabled {
+  opacity: 0.55;
+  pointer-events: none;
+}
+.uplist {
+  list-style: none;
+  margin: 14px 0 12px;
+  padding: 4px 16px;
+  border-radius: var(--r);
+  background: var(--raised);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+.uplist__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  min-height: 44px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+.uplist__row:last-child {
+  border-bottom: 0;
+}
+.uplist__mark {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--sage-soft);
+  color: var(--sage);
+  flex: none;
+}
+.uplist__row.is-bad .uplist__mark {
+  background: var(--stop-bg);
+  color: var(--stop);
+}
+.uplist__num {
+  font-weight: 550;
+  font-size: 14.5px;
+}
+.uplist__sub {
+  font-size: 13.5px;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.uplist__warn {
+  flex-basis: 100%;
+  font-size: 13px;
+  color: var(--stop);
+}
+.tag--upload {
+  gap: 4px;
+  background: var(--card);
+  color: var(--ink-2);
+}
+
 /* capture quality */
 .conditions {
   list-style: none;

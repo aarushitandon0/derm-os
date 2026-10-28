@@ -204,6 +204,22 @@ async function main() {
     await sleep(1200);
     await p.shot("06b-capture-warm-light-warning.png");
 
+    // Upload photos instead: simulated precheck states (dev only, no photos, nothing sent).
+    for (const [kind, text, file] of [
+      ["upload-pick", "Upload your first photos", "12a-upload-choose.png"],
+      ["upload-confirm", "Were these taken within a few minutes", "12b-upload-confirm-sitting.png"],
+      ["upload-fix", "These look like the same photo", "12c-upload-duplicate-refused.png"],
+      ["upload-ready", "passed every check", "12d-upload-ready-to-scan.png"],
+      ["upload-done", "Uploaded photo", "12e-upload-saved.png"],
+    ]) {
+      await p.go("/learn"); // leave the capture route so each simulated state mounts fresh
+      await sleep(300);
+      await p.go(`/capture?mode=baseline&trial=demo-riya-lamp&preview=${kind}`);
+      await p.waitText(text);
+      await sleep(400);
+      await p.shot(file);
+    }
+
     writeFileSync(join(OUT, "layout-check.json"), JSON.stringify(report, null, 2));
     const bad = report.filter((r) => r.sideways);
     console.log(`\n${report.length} screens at ${W}px: ${bad.length} with sideways scroll, ${report.reduce((n, r) => n + r.small.length, 0)} small targets.`);

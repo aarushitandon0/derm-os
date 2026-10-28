@@ -43,7 +43,7 @@ The derm//os number uses the app's own verdict function with its constants fixed
 ### Honesty, engineered
 
 - A **claim linter** in CI fails the build if any screen or template sentence says cause, cure, treat, diagnose, prove, guarantee, clinically, "it works", or claims a percentage improvement.
-- A **benchmark** of 107 cases written from the design before running the engine: 107 of 107 pass. We wrote it, so it isn't independent; it tests the rules, not YouCam's accuracy.
+- A **benchmark** of 115 cases written from the design before running the engine: 115 of 115 pass. We wrote it, so it isn't independent; it tests the rules, not YouCam's accuracy.
 - **docs/FACTS.md** links every README claim to the code and the test behind it, and marks the few that aren't automated.
 - The guided demo's second persona gets a positive verdict from prepared scores through the real engine, with no special case: the same scores under lamp light are "not comparable".
 
@@ -60,7 +60,7 @@ The derm//os number uses the app's own verdict function with its constants fixed
 ### What's next
 
 - Real repeat-scan data for the demo personas.
-- An optional language layer (already written, off in this build) for typed-in history and plain-language summaries, behind a claim validator.
+- An optional language layer (already written, off in the deployed app) for typed-in history and plain-language summaries, behind a claim validator. It runs on a local Ollama server with no API key.
 - Postgres so trials survive restarts.
 
 ### Try it

@@ -24,9 +24,9 @@ committed file: set them in the Render and Vercel dashboards.
 
 1. Render dashboard → **New** → **Blueprint** → pick the repo. Render reads `render.yaml` and creates
    `dermos-api` (Docker, free plan, health check `/health`).
-2. Render asks for the `sync: false` variables. Leave all three empty for now:
-   `CORS_ORIGINS` (filled in after step 2 below), `YOUCAM_API_KEY` and `LIVE_SCAN_PASSCODE`
-   (only for a live judge session; without them live scans are impossible).
+2. Render asks for the `sync: false` variables. Leave them empty for now:
+   `CORS_ORIGINS` (filled in after step 2 below), and `YOUCAM_API_KEY`, `LIVE_SCAN_PASSCODE` and
+   `LIVE_SCAN_MIN_BALANCE` (only for a live judge session; without the first two live scans are impossible).
 3. **Apply**. The first build takes a few minutes (it downloads the face model into the image).
 4. Open `https://<your-service>.onrender.com/health`: expect `{"ok": true}`. Then
    `/api/health`: expect `"server_demo_mode": true` and `"live_scans": "off"`.
@@ -42,7 +42,8 @@ committed file: set them in the Render and Vercel dashboards.
 | `YOUCAM_UNIT_RESERVE` | render.yaml | Units always kept back from live scans |
 | `JUDGE_UNIT_CAP_TOTAL` | render.yaml | Live units this server may spend in total |
 | `JUDGE_UNIT_CAP_DAILY` | render.yaml | Live units per UTC day |
-| `LLM_PROVIDER` | render.yaml | `none`: the optional language layer stays off |
+| `LIVE_SCAN_MIN_BALANCE` | dashboard | The real cap: no live scan may leave the YouCam balance below this |
+| `LLM_PROVIDER` | render.yaml | `none`: the optional language layer stays off (it needs a local Ollama server) |
 | `CORS_ORIGINS` | dashboard | Your Vercel URL |
 | `YOUCAM_API_KEY` | dashboard | Live judge session only |
 | `LIVE_SCAN_PASSCODE` | dashboard | Live judge session only |
@@ -53,8 +54,10 @@ Free plan notes:
   seconds or more; the app shows "Waking the server, about 30 seconds" and retries on its own.
 - **Resets.** The instance disk is temporary. The database (trials, scans, history) resets on every
   restart and redeploy, and the seed runs again. **That includes the judge unit counter**, so
-  `JUDGE_UNIT_CAP_TOTAL` is "per server start", not lifetime. The YouCam reserve still protects
-  your balance across restarts, because it reads the real balance before every live scan.
+  `JUDGE_UNIT_CAP_TOTAL` is "per server start", not lifetime. `LIVE_SCAN_MIN_BALANCE` is the cap
+  that survives restarts: before every live scan the server reads the real YouCam balance (a free
+  call) and sends nothing that would leave it below the floor. If the balance can't be read, the
+  scan isn't sent either.
 - **Memory.** One 12 MP photo crop peaks at about 290 MB on Windows (`python scripts/measure_memory.py`);
   the free instance has 512 MB.
 
@@ -78,10 +81,14 @@ Free plan notes:
 
 ## Live scans for a judge session (optional)
 
-Live scans need **all** of: `DEMO_MODE=0` on the server, the passcode on the device, units left
-under both judge caps, and a balance above the reserve after the scan.
+Live scans need **all** of: `DEMO_MODE=0` on the server, the passcode on the device, a readable
+YouCam balance that stays at or above `LIVE_SCAN_MIN_BALANCE` after the scan, units left under both
+judge caps, and a balance above the reserve after the scan. Whenever the floor or a cap stops a
+scan, it replays prepared data and the app says so; nothing is sent to YouCam.
 
 1. On Render set `YOUCAM_API_KEY` and `LIVE_SCAN_PASSCODE`, and change `DEMO_MODE` to `0`.
+   Set LIVE_SCAN_MIN_BALANCE = your balance at deploy time minus the units you'll allow judges (e.g. 300).
+   Read the balance first with the free credit call (`GET /s2s/v1.0/client/credit`).
 2. On the phone: Learn → **Live scans** → enter the passcode. Only that device scans live; everyone
    else keeps getting prepared data. A wrong passcode is refused, not replayed.
 3. Each live scan with the default 4 concerns costs 9 units (SD). With the defaults that's at most

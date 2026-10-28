@@ -4,6 +4,7 @@
 // builds drop it. The simulated numbers go through the real checklist() and gate-light rule.
 import type { Capture, Comparability, Fingerprint } from "../api";
 import type { BaselineLight, FaceMetrics, LightMetrics } from "./faceGuide";
+import type { UploadSimulation } from "../components/UploadPhotos";
 
 export type PreviewKind = "far" | "close" | "warm" | "countdown" | "lookaway" | "quality";
 const KINDS: PreviewKind[] = ["far", "close", "warm", "countdown", "lookaway", "quality"];
@@ -112,4 +113,70 @@ export function previewState(kind: PreviewKind): Preview {
     };
   }
   return p;
+}
+
+// ---------------------------------------------------------------- upload (DEV only, no photos)
+// `&preview=upload-pick|upload-confirm|upload-fix|upload-ready|upload-done`. The results below are
+// shaped exactly like POST /api/upload/precheck and /api/upload/scan responses; the messages are
+// the server's own wording (backend/app/photometa.py).
+export type UploadPreviewKind = "upload-pick" | "upload-confirm" | "upload-fix" | "upload-ready" | "upload-done";
+const UPLOAD_KINDS: UploadPreviewKind[] = ["upload-pick", "upload-confirm", "upload-fix", "upload-ready", "upload-done"];
+
+export function readUploadPreview(): UploadPreviewKind | null {
+  const q = new URLSearchParams(window.location.hash.split("?")[1] ?? "");
+  const v = q.get("preview") as UploadPreviewKind | null;
+  return v && UPLOAD_KINDS.includes(v) ? v : null;
+}
+
+const photoOk = (index: number, hour: number | null) => ({
+  index,
+  ok: true,
+  warning: null,
+  hour,
+  device: hour === null ? "not recorded" : "Acme Phone 7",
+  mode: "sd",
+});
+
+export function uploadPreviewState(kind: UploadPreviewKind): UploadSimulation {
+  const base = { code: null, message: null, needs_confirmation: false, timing: null, comparability: null };
+  if (kind === "upload-pick") return { count: 0, result: null };
+  if (kind === "upload-confirm")
+    return {
+      count: 3,
+      result: {
+        ...base,
+        ok: false,
+        code: "confirm_sitting",
+        message: "Were these taken within a few minutes of each other, in the same spot?",
+        needs_confirmation: true,
+        photos: [photoOk(1, 9), photoOk(2, 9), photoOk(3, null)],
+      },
+    };
+  if (kind === "upload-fix")
+    return {
+      count: 3,
+      result: {
+        ...base,
+        ok: false,
+        code: "duplicate",
+        message: "These look like the same photo. Upload 3 different shots.",
+        photos: [photoOk(1, 9), photoOk(2, 9), photoOk(3, 9)],
+      },
+    };
+  const ready = { ...base, ok: true, timing: "exif" as const, photos: [photoOk(1, 9), photoOk(2, 9), photoOk(3, 9)] };
+  if (kind === "upload-ready") return { count: 3, result: ready };
+  const cap = (i: number): Capture => ({
+    id: `preview-up-${i}`,
+    phase: "baseline",
+    taken_at: "2026-10-28T03:30:00+00:00",
+    source: "replay",
+    replay: { persona: "riya", set: "baseline", fixture: "preview", synthetic: true },
+    masks: {},
+    fingerprint: fp({ captured_hour: 9, capture_source: "upload", device: "Acme Phone 7" }),
+    raw_scores: { redness: 60 + i },
+    mode: "sd",
+    place: "window",
+    baseline_timing: "exif",
+  });
+  return { count: 3, result: ready, done: { captures: [cap(1), cap(2), cap(3)], comparability: [null, null, null], notice: null } };
 }

@@ -22,6 +22,10 @@ automated** say so plainly.
 | Claim | Implemented in | Tested by |
 | --- | --- | --- |
 | `DEMO_MODE` defaults to `1` | `backend/app/guard.py` `demo_mode()` | `backend/tests/test_judge_mode.py` `test_demo_mode_is_on_unless_explicitly_zero` |
+| "Upload photos instead": 3 photos for the first set, 2 for a check-in; JPEG, PNG or HEIC up to 15 MB | `frontend/src/components/UploadPhotos.tsx`; `backend/app/photometa.py` `check_file()`, `UPLOAD_COUNT`; `main.py` `upload_precheck()`, `upload_scan()` | `backend/tests/test_upload.py` `test_baseline_needs_exactly_three_and_checkin_two`, `test_files_over_15_mb_and_other_types_are_refused`, `test_heic_is_accepted_when_the_decoder_is_installed`; bench `up-08`. The screen itself: **not automated** (TypeScript check and screenshots `12a`–`12e`) |
+| A free precheck (no YouCam call, nothing stored) gives pass or one plain fix; Scan re-runs every check on the server | `main.py` `_precheck()`, `_prepare()`, `upload_scan()` | `test_precheck_passes_and_never_calls_youcam`, `test_scan_reruns_the_checks_and_never_trusts_the_client`, `test_scan_refuses_a_checkin_the_gate_rejects`, `test_no_face_gives_one_plain_fix` |
+| Uploaded and camera photos get the same crop, fingerprint and gate; "Uploaded photo" is display only | `main.py` `_prepare()` (one path for both), `_gate()`; `fingerprint.py` `capture_source` | `test_uploaded_and_camera_photos_get_identical_gate_results`; bench `up-05`, `up-06` |
+| Uploaded first photos: two identical pictures are refused; times over 15 minutes apart are refused; a missing time asks the user, and "yes" is stored as user-confirmed | `photometa.py` `baseline_integrity()`, `pixel_hash()`, `read_meta()` | `test_duplicate_baseline_is_refused`, `test_spread_timestamps_are_refused`, `test_missing_timestamps_need_confirmation`, `test_user_confirmation_is_stored_with_the_baseline`; bench `up-01`…`up-04` |
 | A baseline is 3 scans and a check-in is 2 | `frontend/src/screens/Capture.tsx` (shot counts); `backend/app/evidence.py` `evaluate()` needs at least 2 + 2 | bench `mb-01`…`mb-04` (fewer gives no trend) |
 | A change counts only when the ranges don't overlap | `evidence.py` `_findings()` | bench `ov-01`…`ov-05`; `backend/tests/test_benchmark.py` `test_overlapping_ranges_mean_no_detectable_change` |
 | The gate checks brightness, light colour, face size, head angle, camera and time of day | `evidence.py` `compare_conditions()`; `backend/app/fingerprint.py` `measure()` | bench `nc-01`…`nc-12` |
@@ -40,10 +44,11 @@ automated** say so plainly.
 
 | Claim | Implemented in | Tested by |
 | --- | --- | --- |
-| 107 of 107 cases pass | `backend/benchmark/` | `python -m benchmark` (exit code 1 on any failure), CI |
+| 115 of 115 cases pass | `backend/benchmark/` | `python -m benchmark` (exit code 1 on any failure), CI |
 | The positive persona is judged by the real engine, with no special-casing | `backend/app/scenes.py` writes rows only | bench `pos-01`…`pos-08` (`pos-04`: same scores under lamp light are not comparable; `pos-08`: the scene code names no verdict, gate or engine) |
+| The optional language layer runs only on a local Ollama server, with no key; the deployed app has it off | `backend/app/llm/providers.py` `get_provider()` (`ollama`); `render.yaml` `LLM_PROVIDER: none` | `backend/tests/test_llm.py` `test_ollama_needs_no_key_and_defaults_to_local`, `test_ollama_not_running_falls_back_to_templates`. A real local call: **not automated** (checked by hand on 28 Oct: intake proposed the right two records) |
 | 18 cases cover the optional language layer with a scripted stand-in | `backend/benchmark/fakes.py`, `backend/app/llm/` | bench `llm-01`…`llm-18` |
-| 370+ backend tests with no network and no units | `backend/tests/conftest.py` (no `.env`, no key, stand-in face detector) | CI `pytest -q` |
+| 405 backend tests with no network and no units | `backend/tests/conftest.py` (no `.env`, no key, stand-in face detector) | CI `pytest -q` |
 | The claim linter fails the build on overclaiming wording | `backend/scripts/claim_lint.py` | `backend/tests/test_claim_linter.py` (all), CI step "Claim linter" |
 | TypeScript typecheck and production build in CI | `.github/workflows/ci.yml` | CI job "frontend" |
 | No real brand or retailer names in the catalog, fixtures or UI | `claim_lint.py` `brand_hits()` | `test_no_real_brand_or_retailer_names` |
@@ -55,6 +60,7 @@ automated** say so plainly.
 | File register, presigned upload, task create, poll | `backend/app/youcam.py` `upload()`, `create_task()`, `poll()`, `analyze()` | `backend/tests/test_youcam.py` `test_full_flow_with_mock_transport` |
 | Masks downloaded right away, without the bearer header | `youcam.py` `download_masks()` | `backend/tests/test_demo_safety.py` `test_download_masks_saves_files_and_skips_failures`, `test_live_scan_stores_local_mask_paths` |
 | Task delete once masks are saved | `youcam.py` `delete_task()`; `main.py` `scan()` | `backend/tests/test_privacy.py` `test_delete_task_request_shape`, `test_delete_called_after_mask_download` |
+| Balance floor: before every live scan the real balance is read; a scan that would leave less than `LIVE_SCAN_MIN_BALANCE`, or any balance-read failure, replays prepared data and sends nothing. It survives restarts | `guard.py` `min_balance()`, `balance_floor()`, `floor_message()`; `main.py` `_scan_prepared()` | `test_judge_mode.py` `test_balance_floor_blocks_and_survives_a_restart`, `test_balance_floor_allows_a_scan_that_stays_above_it`, `test_balance_read_failure_blocks_the_scan`, `test_balance_floor_setting_fails_safe`; `test_demo_safety.py` `test_scan_falls_back_when_credit_call_fails` |
 | Balance read before every live scan; exact price from the feature-cost list | `youcam.py` `credit()`, `unit_balance()`, `feature_costs()`, `scan_cost()` | `test_facecrop.py` `test_client_reads_paged_price_list`, `test_live_scan_refused_when_balance_cannot_pay_exact_cost` |
 | Default 4 concerns (redness, acne, texture, pore), 9 units per SD scan | `main.py` `DEFAULT_ACTIONS`; `youcam.py` `PRICE_FALLBACK`; `frontend/src/api.ts` `DEFAULT_ACTIONS` | `test_judge_mode.py` `test_default_concerns_reserve_and_caps`; `test_facecrop.py` `test_cost_is_tiered_by_number_of_concerns` |
 | Decisions use `raw_score`, never `ui_score` | `youcam.py` `SkinResult.raw_scores()`; `main.py` `_to_capture()` | `test_youcam.py` `test_normalize_task_json_uses_raw_score` |
@@ -69,6 +75,7 @@ automated** say so plainly.
 | --- | --- | --- |
 | The uploaded photo (and its crop) is deleted from the server straight after | `main.py` `scan()` `finally: os.unlink` | `test_judge_mode.py` `test_uploaded_photo_and_its_crop_are_deleted_after_the_scan` |
 | Sent to YouCam only for a live scan | `guard.py` `scan_source()`; `main.py` `scan()` | `test_demo_safety.py` `test_demo_mode_replays_fixtures_in_rotation_without_calling_youcam`; `test_privacy.py` `test_demo_mode_never_calls_youcam_delete` |
+| Photo metadata is stripped: the crop sent to YouCam and saved masks are re-encoded from pixels; only the capture hour and a camera label are kept from EXIF; GPS is never stored | `photometa.py` `clean_copy()`, `clean_bytes()`, `read_meta()`; `facecrop.py` `normalise()`, `png_bytes()`; `youcam.py` `download_masks()`; `demo.py` `copy_masks()` | `test_upload.py` `test_gps_is_never_stored_and_stored_files_have_no_exif`, `test_camera_crop_sent_to_youcam_has_no_metadata`, `test_clean_bytes_drops_every_tag`, `test_upload_input_really_carries_gps_and_exif`; bench `up-07` |
 | Stored scans never keep mask URLs | `youcam.py` `strip_urls()`; `main.py` `scan()` | `test_judge_mode.py` `test_stored_scans_never_keep_mask_urls` |
 | "Delete my saved scans" removes them and re-asks YouCam for unconfirmed tasks | `main.py` `delete_captures()` | `test_privacy.py` `test_delete_saved_scans_rerequests_only_unconfirmed_live_tasks`, `test_delete_saved_scans_without_key_still_deletes_locally` |
 | Committed fixtures hold scores and capture numbers only | `backend/scripts/make_fixtures.py` `sanitize()`, `leaks()` | `test_privacy.py` `test_fixture_keeps_scores_actions_engine_fingerprint_only`, `test_committed_fixtures_have_no_urls_or_images` |
@@ -85,4 +92,4 @@ automated** say so plainly.
 | `/health` makes no YouCam call | `main.py` `liveness()`, `health()` | `test_judge_mode.py` `test_health_never_calls_youcam` |
 | Docker image for Render | `backend/Dockerfile`, `render.yaml` | **not automated**; see the build note in `docs/DEPLOY.md` |
 | Experiments: `--only` pilot with balance before and after; whole-run balance check | `backend/scripts/run_experiments.py` `main()`, `cost_blocker()` | `test_analyze_experiment.py` `test_pilot_reports_units_charged_and_full_run_reuses_it`; `backend/tests/test_experiment_scripts.py` `test_refuses_when_balance_cannot_cover_the_whole_run` |
-| 390 px with no sideways scroll, tap targets at least 44 px | `frontend/src/styles.css` | `frontend/scripts/screenshots.mjs` layout check (12 screens: 0 sideways scroll, 0 small targets on 28 Oct); **not in CI** |
+| 390 px with no sideways scroll, tap targets at least 44 px | `frontend/src/styles.css` | `frontend/scripts/screenshots.mjs` layout check (17 screens: 0 sideways scroll, 0 small targets on 28 Oct); **not in CI** |

@@ -70,5 +70,35 @@
     "sideways": false,
     "scrollWidth": 390,
     "small": []
+  },
+  {
+    "name": "12a-upload-choose.png",
+    "sideways": false,
+    "scrollWidth": 390,
+    "small": []
+  },
+  {
+    "name": "12b-upload-confirm-sitting.png",
+    "sideways": false,
+    "scrollWidth": 390,
+    "small": []
+  },
+  {
+    "name": "12c-upload-duplicate-refused.png",
+    "sideways": false,
+    "scrollWidth": 390,
+    "small": []
+  },
+  {
+    "name": "12d-upload-ready-to-scan.png",
+    "sideways": false,
+    "scrollWidth": 390,
+    "small": []
+  },
+  {
+    "name": "12e-upload-saved.png",
+    "sideways": false,
+    "scrollWidth": 390,
+    "small": []
   }
 ]

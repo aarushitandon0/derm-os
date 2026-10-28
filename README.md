@@ -35,6 +35,8 @@ How it's measured (`backend/scripts/analyze_experiment.py`): every split of the 
 
 - **Your own noise range.** A baseline is 3 scans, so each concern gets a range, not one number. A check-in is 2 scans. A change counts only when the two ranges don't overlap.
 - **Comparability gate.** Every photo carries a fingerprint: brightness, light colour, face size, head angle, camera and time of day. When a check-in doesn't match the baseline, the answer is "can't tell", with how to retake.
+- **Take photos or upload them.** "Upload photos instead" opens the gallery: 3 photos for the first set, 2 for a check-in (JPEG, PNG or HEIC, up to 15 MB). A free check on the server (no YouCam call) runs first: one face, the same crop, the light reading and the comparability gate, with one plain fix if anything fails. Uploaded and camera photos go through the same crop, fingerprint and gate; an "Uploaded photo" badge is for display only.
+- **Honest first photos.** Uploaded first photos are refused if two are the same picture, or if their capture times are more than 15 minutes apart. If a photo has no capture time, the app asks whether they were taken in one sitting and notes the answer.
 - **Same crop for every photo.** Each photo is cropped around the face (on the server, by a local detector) and scaled so the face is the same width every time. No colour, brightness or rotation edits.
 - **One change per trial.** More than one new leave-on product means "can't tell which".
 - **Symptoms outrank scores.** A reported reaction such as itching gives a Stop card and a visit brief, whatever the scores say.
@@ -46,7 +48,7 @@ The strongest wording is "changed during this trial". derm//os is decision suppo
 
 ## Evidence benchmark
 
-**107 of 107 cases pass** (`cd backend; python -m benchmark`). We wrote this benchmark ourselves, so it is **not an independent evaluation**: it shows the rules behave as designed, not how accurate YouCam's scores are.
+**115 of 115 cases pass** (`cd backend; python -m benchmark`). We wrote this benchmark ourselves, so it is **not an independent evaluation**: it shows the rules behave as designed, not how accurate YouCam's scores are.
 
 | Category | Cases |
 | --- | --- |
@@ -65,9 +67,10 @@ The strongest wording is "changed during this trial". derm//os is decision suppo
 | Wording stays at "during this trial" | 2 / 2 |
 | Positive persona: a comparable move beyond noise, judged by the real engine | 8 / 8 |
 | Rebuy line follows the verdict | 8 / 8 |
-| Optional language layer (scripted stand-in, off in the judged build) | 18 / 18 |
+| Uploaded photos: same checks as the camera, honest baselines, no GPS | 8 / 8 |
+| Optional language layer (scripted stand-in, off in the deployed app) | 18 / 18 |
 
-Also in CI: 370 backend tests (no network, no units), the claim linter, TypeScript typecheck and the production build.
+Also in CI: 405 backend tests (no network, no units), the claim linter, TypeScript typecheck and the production build.
 
 ## YouCam API used
 
@@ -86,7 +89,7 @@ Skin Analysis v2.1, SD, 4 concerns by default (redness, acne, texture, pore: 9 u
 
 Every evidence decision uses `raw_score`. YouCam describes `ui_score` as adjusted upward for display, so it is never used to judge change.
 
-**Units are guarded.** The public demo replays prepared scores (`DEMO_MODE=1`). A live scan needs the server set to live, a passcode on the device, room under the judge caps (300 units total, 100 a day, counted in the database) and a balance that stays above a 200-unit reserve. Over a cap, the scan replays prepared data and the app says so.
+**Units are guarded.** The public demo replays prepared scores (`DEMO_MODE=1`). A live scan needs the server set to live and a passcode on the device. Before every live scan the server reads the real YouCam balance (a free call) and works out the scan's exact price; if the balance minus that price would drop below `LIVE_SCAN_MIN_BALANCE`, or the balance can't be read, nothing is sent. Because it reads the real balance, this cap survives server restarts. The judge caps counted in the database (300 units total, 100 a day) and a 200-unit reserve are second limits. Whenever the floor or a cap stops a scan, it replays prepared data and the app says so.
 
 ## What derm//os will not tell you
 
@@ -99,6 +102,7 @@ Every evidence decision uses `raw_score`. YouCam describes `ui_score` as adjuste
 ## Privacy
 
 - The uploaded photo is cropped and measured on the server, sent to YouCam only for a live scan, and deleted from the server straight after.
+- Photo metadata is stripped. The crop sent to YouCam and every saved mask are re-encoded from pixels alone (no EXIF, GPS or other tags). From a photo's EXIF the app keeps only the capture hour and a camera label such as "Acme Phone 7", or "not recorded". GPS is never read, stored or logged.
 - After a live scan's masks are saved, the server asks YouCam to delete the task, which removes the photo and outputs there.
 - Stored scans keep scores, capture conditions and local mask images, never mask URLs. **Delete my saved scans** (Learn page) removes them and asks YouCam again for any task not confirmed deleted.
 - Committed fixtures hold scores and capture-condition numbers only. A pre-commit hook blocks photo files; `photos/`, `backend/media/` and raw results are git-ignored.
@@ -115,7 +119,7 @@ Every evidence decision uses `raw_score`. YouCam describes `ui_score` as adjuste
 
 ## Next
 
-- **Language layer** (code in `backend/app/llm/`, off by default and not part of the judged build): free-text history intake that the user confirms record by record, and plain-language explanations behind a claim validator that falls back to the fixed wording.
+- **Language layer** (code in `backend/app/llm/`; off on the deployed app, which sets `LLM_PROVIDER=none`): free-text history intake that the user confirms record by record, and plain-language explanations behind a claim validator that falls back to the fixed wording. It runs only against a local Ollama server (`LLM_PROVIDER=ollama`, no API key), so today it works on a developer's own machine, not for judges. On a laptop CPU one call took about 50 seconds.
 - **Postgres and object storage** in place of SQLite, so trials survive restarts.
 - Real repeat-scan fixtures for the demo personas in place of the prepared ones.
 

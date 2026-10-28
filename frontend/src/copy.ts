@@ -255,3 +255,33 @@ export const CAPTURE = {
   cameraTooSmall:
     "This camera's picture is too small for a scan, even up close. Open derm//os on your phone instead.",
 };
+
+// Upload photos instead of taking them (components/UploadPhotos.tsx).
+export const UPLOAD = {
+  instead: "Upload photos instead",
+  insteadWhy: "Choose photos from your gallery. They get the same checks as the camera.",
+  lede: {
+    baseline: "Choose 3 photos of your face, taken a few minutes apart in one sitting, in the same spot and light.",
+    checkin: "Choose 2 photos, taken in the same spot and light as your first photos.",
+  } as Record<"baseline" | "checkin", string>,
+  choose: (n: number) => `Choose ${n} photos`,
+  chooseAgain: "Choose different photos",
+  unedited: "Use unedited photos: no filters or beauty mode.",
+  demo: "Demo mode: the checks run on your real photos; the scores are prepared data. Nothing is sent to YouCam.",
+  wrongCount: (need: number, got: number) => `You chose ${got}. Choose exactly ${need} photos.`,
+  checking: (n: number) => `Checking ${n} photos on our server. Nothing is sent to YouCam for this.`,
+  checkFailed: "The photos couldn't be checked. Try again.",
+  scanFailed: "The scan didn't go through. Try again.",
+  photoLine: (hour: number | null, device: string) =>
+    `${hour === null ? "time not recorded" : `taken around ${String(hour).padStart(2, "0")}:00`} · ${
+      device === "not recorded" ? "camera not recorded" : device
+    }`,
+  photoBad: "needs a different photo",
+  whyAsk: "These photos don't say when they were taken. Your first photos set your normal range, so they need to come from one sitting.",
+  passed: "These photos passed every check. Nothing has been sent to YouCam yet.",
+  scan: (n: number) => `Scan these ${n} photos`,
+  scanning: "Scanning…",
+  saved: (n: number, phase: "baseline" | "checkin") =>
+    phase === "baseline" ? `${n} photos saved. These set your normal range.` : `${n} photos saved and compared with your first photos.`,
+  userConfirmed: "You confirmed these were taken in one sitting; that's noted with them.",
+};

@@ -25,6 +25,6 @@ Rules for the cut:
 | 2:05–2:20 | Step 5: day 14, "No detectable change yet", rebuy line | PREPARED | "Back in window light at day 14: her new scores sit inside her own range. Rebuy? Finish the trial first." |
 | 2:20–2:35 | Steps 6–7: itching logged → Stop card → visit brief | PREPARED | "Then she logs itching. A reaction you can feel outranks any score: don't rebuy, and here's a one-page brief for a clinician." |
 | 2:35–2:45 | Step 8: Meera, "Redness dropped beyond your usual variation during this trial", rebuy line | PREPARED | "Meera's check-ins match her baseline and leave her range. That's the strongest thing derm//os will say: it changed during this trial, not why." |
-| 2:45–3:00 | Laptop: `docs/architecture.svg`, then CI green, benchmark "107 / 107", claim linter "0 findings" | Repo | "Rules decide; YouCam measures. A benchmark we wrote ourselves passes 107 of 107, a claim linter blocks overclaiming words in every screen, and every claim in the README links to the test behind it. Decision support, not diagnosis." |
+| 2:45–3:00 | Laptop: `docs/architecture.svg`, then CI green, benchmark "115 / 115", claim linter "0 findings" | Repo | "Rules decide; YouCam measures. A benchmark we wrote ourselves passes 115 of 115, a claim linter blocks overclaiming words in every screen, and every claim in the README links to the test behind it. Decision support, not diagnosis." |
 
 Before you publish: watch it once with the sound off and check every prepared screen shows "Prepared demo data".

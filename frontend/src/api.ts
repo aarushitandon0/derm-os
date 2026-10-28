@@ -183,6 +183,8 @@ export interface Fingerprint {
   original_width?: number | null;
   original_height?: number | null;
   face_ratio_live?: number | null;
+  // How the photo arrived. Display only: the comparability gate never reads it.
+  capture_source?: "camera" | "upload" | null;
 }
 
 export interface Capture {
@@ -196,6 +198,8 @@ export interface Capture {
   raw_scores: Record<string, number>;
   mode: string;
   place?: Place | null;
+  // Uploaded first photos: "exif" (times within 15 minutes) or "user-confirmed" (no times; the user said yes).
+  baseline_timing?: "exif" | "user-confirmed" | null;
 }
 
 /** Where the baseline was taken, if the user said. Never inferred. */
@@ -333,6 +337,51 @@ const json = (method: string, data: unknown): RequestInit => ({
   body: JSON.stringify(data),
 });
 
+/** The free checks on uploaded photos (no YouCam call, nothing stored): pass, or one plain fix. */
+export interface PrecheckResult {
+  ok: boolean;
+  code: string | null;
+  message: string | null;
+  needs_confirmation: boolean;
+  timing: "exif" | "user-confirmed" | null;
+  photos: {
+    index: number;
+    ok: boolean;
+    code?: string;
+    message?: string;
+    warning?: string | null;
+    hour?: number | null;
+    device?: string;
+    mode?: string;
+  }[];
+  comparability: (Comparability | null)[] | null;
+}
+
+export type UploadScanResult = { captures: Capture[]; comparability: (Comparability | null)[]; notice?: string | null };
+
+export interface UploadInput {
+  files: File[];
+  phase: "baseline" | "checkin";
+  trialId?: string;
+  sameSitting?: boolean | null;
+  persona?: string;
+  fixtureSet?: string | null;
+  place?: Place | null;
+}
+
+function uploadForm(u: UploadInput): FormData {
+  const f = new FormData();
+  u.files.forEach((file, i) => f.append("images", file, file.name || `photo-${i + 1}.jpg`));
+  f.append("phase", u.phase);
+  f.append("actions", DEFAULT_ACTIONS.join(","));
+  if (u.trialId) f.append("trial_id", u.trialId);
+  if (u.sameSitting !== null && u.sameSitting !== undefined) f.append("same_sitting", String(u.sameSitting));
+  if (u.persona) f.append("persona", u.persona);
+  if (u.fixtureSet) f.append("fixture_set", u.fixtureSet);
+  if (u.place) f.append("place", u.place);
+  return f;
+}
+
 export interface ScanInput {
   image: Blob;
   phase: "baseline" | "checkin" | "free";
@@ -383,6 +432,10 @@ export const api = {
   demoReset: () => call<unknown>("/api/demo/reset", { method: "POST" }),
   /** Guided demo: write one prepared scene (server demo mode only). */
   demoScene: (name: string) => call<{ scene: string; trial_id: string | null }>(`/api/demo/scene/${name}`, { method: "POST" }),
+  /** Free checks on uploaded photos. Never calls YouCam. */
+  precheck: (u: UploadInput) => call<PrecheckResult>("/api/upload/precheck", { method: "POST", body: uploadForm(u) }),
+  /** Scan uploaded photos. The server re-runs every precheck itself first. */
+  uploadScan: (u: UploadInput) => call<UploadScanResult>("/api/upload/scan", { method: "POST", body: uploadForm(u) }),
   scan: (s: ScanInput, onUploaded?: (fraction: number, done: boolean) => void) => {
     const f = new FormData();
     f.append("image", s.image, "capture.jpg");

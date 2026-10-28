@@ -43,3 +43,7 @@ services:
         sync: false
       - key: LIVE_SCAN_PASSCODE
         sync: false
+      # The real cap for live scans (survives restarts): your balance at deploy time minus the units
+      # you'll allow judges. Unset, it falls back to YOUCAM_UNIT_RESERVE.
+      - key: LIVE_SCAN_MIN_BALANCE
+        sync: false

@@ -271,6 +271,14 @@ function avg(xs: (number | null | undefined)[]) {
   return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
 }
 
+// How the photos arrived. Display only: uploaded and camera photos go through the same gate.
+const uploaded = (caps: Capture[]) => caps.some((c) => c.fingerprint?.capture_source === "upload");
+const UploadedBadge = () => (
+  <span className="tag tag--upload" style={{ display: "flex", width: "fit-content", marginTop: 4 }}>
+    Uploaded photo
+  </span>
+);
+
 function Conditions({ base, follow }: { base: Capture[]; follow: Capture[] }) {
   if (!base.length || !follow.length) return null;
   const rows: [string, (c: Capture) => number | null | undefined, (n: number) => string][] = [
@@ -284,8 +292,14 @@ function Conditions({ base, follow }: { base: Capture[]; follow: Capture[] }) {
       <thead>
         <tr>
           <th />
-          <th>Baseline</th>
-          <th>Check-in</th>
+          <th>
+            Baseline
+            {uploaded(base) && <UploadedBadge />}
+          </th>
+          <th>
+            Check-in
+            {uploaded(follow) && <UploadedBadge />}
+          </th>
         </tr>
       </thead>
       <tbody>

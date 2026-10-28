@@ -6,17 +6,17 @@ Oct 27, 2026 · @aarushi
 
 Build derm//os as **the skincare app that knows when it can't tell you yet.** Every purchase becomes a small, well-run personal experiment: one change, a calibrated baseline, matched captures, and a verdict that is only as strong as the evidence. Keep the full Interval scope (start, compare, review, visit brief), but make the evidence engine the hero. 
 
-The research changes the plan in one important way: a team in this same hackathon (Shelf Check) already ships a polished "buy less" agent with shelf audits, rescans, and product-by-product verdicts. "Compare routines and track progress" is no longer enough to stand out. What nobody in the field does yet is **measure how much the score moves on its own before believing it moved because of a product.** 
+The research changes the plan in one important way: another entry in this round already ships a polished "buy less" agent with shelf audits, rescans, and product-by-product verdicts. "Compare routines and track progress" is no longer enough to stand out. What nobody in the field does yet is **measure how much the score moves on its own before believing it moved because of a product.** 
 
 **The one-line pitch:** _Same face, same light, one change, honest verdict._ 
 
 **Three genuine standout points (each one demoable, none of them claimed by the competitors I found):** 
 
-1. **Your personal noise floor.** At baseline, derm//os takes a quick burst of 3 scans and measures how much _your_ scores wobble per concern. A later change only counts if it beats your own measured noise. Shelf Check uses one fixed ±4 band for everyone. 
+1. **Your personal noise floor.** At baseline, derm//os takes a quick burst of 3 scans and measures how much _your_ scores wobble per concern. A later change only counts if it beats your own measured noise. A fixed-threshold tracker in this round uses one fixed ±4 band for everyone. 
 
 2. **A comparability gate.** Every capture gets a fingerprint (light level, face size, head pose, time of day, device). If the before and after photos aren't comparable, derm//os says so and re-guides the capture instead of reporting a trend. 
 
-3. **Attribution you can trust.** derm//os plans changes so results are interpretable (one new product at a time, as dermatologists advise), and it refuses to blame a product when several things changed. Shelf Check pauses a product because redness rose after its start date; derm//os would ask whether anything else changed first. 
+3. **Attribution you can trust.** derm//os plans changes so results are interpretable (one new product at a time, as dermatologists advise), and it refuses to blame a product when several things changed. A fixed-threshold tracker in this round pauses a product because redness rose after its start date; derm//os would ask whether anything else changed first. 
 
 **ML answer:** do not train a model. Use YouCam Skin Analysis for perception, MediaPipe in the browser for capture checks, plain statistics for the noise floor, deterministic rules for exclusions and comparisons, and an LLM only for intake extraction and plain-language explanations, behind a validator. 
 
@@ -30,14 +30,14 @@ The evidence points one way: skin scores are useful, but small changes between t
 
 |Fact|Detail|Source|
 |---|---|---|
-|Endpoints|Upload file(<br>POST /s2s/v2.0/file/skin-analysis+<br>presigned PUT), create task (<br>POST<br>/s2s/v2.x/task/skin-analysis), poll<br>GET …/{task_id};<br>bearer API key|skinmirror<br>, conventions|
+|Endpoints|Upload file(<br>POST /s2s/v2.0/file/skin-analysis+<br>presigned PUT), create task (<br>POST<br>/s2s/v2.x/task/skin-analysis), poll<br>GET …/{task_id};<br>bearer API key|another entry's public code<br>, conventions|
 |Version|v2.1 (June 2026) has updated engines and up to 2560<br>px skincare output|changelog|
-|Concerns|14 SD actions (acne, wrinkle, pore, texture, redness,<br>oiliness, moisture, radiance, age_spot,<br>dark_circle_v2, eye_bag, firmness, droopy eyelids);<br>HD = same names with<br>hd_prefix, plus skin type and<br>tear trough|zenn-youcam<br>, Playground|
+|Concerns|14 SD actions (acne, wrinkle, pore, texture, redness,<br>oiliness, moisture, radiance, age_spot,<br>dark_circle_v2, eye_bag, firmness, droopy eyelids);<br>HD = same names with<br>hd_prefix, plus skin type and<br>tear trough|a community write-up<br>, Playground|
 |Hard rule|SD and HD can't be mixed in one request|Playground|
-|Output|Per concern:<br>ui_score,<br>raw_score,<br>mask_urls; HD<br>adds per-region scores; JSON or ZIP|skinmirror<br>, Shelf Check|
+|Output|Per concern:<br>ui_score,<br>raw_score,<br>mask_urls; HD<br>adds per-region scores; JSON or ZIP|other entries' public code|
 |Photo rules|JPEG/PNG ≤10 MB; SD short side ≥480 px; HD short<br>side ≥1080 px|Playground|
-|Cost|Reported: 16 HD actions = 22 units per task;<br>GET<br>/s2s/v2.0/credit/feature-costreturns exact costs|Shelf Check<br>, changelog|
-|Gotchas|Result URLs reportedly expire after ~2 hours<br>(download masks); finished tasks can be deleted with<br>inputs via<br>POST /s2s/v2.0/task/delete|Shelf Check<br>, changelog|
+|Cost|Reported: 16 HD actions = 22 units per task;<br>GET<br>/s2s/v2.0/credit/feature-costreturns exact costs|another entry's public code<br>, changelog|
+|Gotchas|Result URLs reportedly expire after ~2 hours<br>(download masks); finished tasks can be deleted with<br>inputs via<br>POST /s2s/v2.0/task/delete|another entry's public code<br>, changelog|
 
 
 
@@ -79,7 +79,7 @@ Dermatology practice already asks for this discipline. The AAD advises testing a
 
 ## **Competitive landscape** 
 
-The direct threat is inside this hackathon. Shelf Check covers routine audits, purchase advice, and rescans with real engineering depth, so derm//os has to win on evidence quality, not feature count. 
+The direct threat is inside this hackathon. One entry in this round covers routine audits, purchase advice, and rescans with real engineering depth, so derm//os has to win on evidence quality, not feature count. 
 
 ### **What round one rewarded** 
 
@@ -96,14 +96,14 @@ Round one drew 238 submissions. All four named winners solved a specific person'
 
 Pattern to copy: one clear audience, one hard number, and visible honesty about what the image can and can't show. 
 
-### **Entries in this round (public repos found)** 
+### **Other entries (public code found; names withheld)** 
 
 |Project|What it does|Copy this|Where it stops|
 |---|---|---|---|
-|Shelf Check|Claude tool-loop agent:<br>keep / pause /<br>alternate / buy verdicts,<br>rescans, Skin Simulation,<br>Makeup VTO|Typed YouCam client<br>with retries;<br>deterministic rules as<br>tools; plan validator<br>that rejects bad plans;<br>recorded replays so the<br>demo never breaks; unit<br>+ e2e tests|One fixed ±4 noise<br>band for everyone;<br>attributes a change to<br>a product from start<br>date alone; no<br>capture comparability<br>check; browser-only<br>history|
-|GlowPath|Skin report, routine,<br>cart, weekly "is it<br>working?"|Simple weekly check-in<br>loop|Score deltas only|
-|SkinMirror|Selfie → AM/PM routine<br>→ makeup VTO|Server-side key handling|No follow-up<br>evidence|
-|Skinova<br>(round one)|Five YouCam APIs, RAG<br>coach, progress with<br>simulation|Breadth of API use, live<br>deployment|Trend deltas, no<br>comparability check|
+|A fixed-threshold tracker in this round|LLM tool-loop agent:<br>keep / pause /<br>alternate / buy verdicts,<br>rescans, Skin Simulation,<br>Makeup VTO|Typed YouCam client<br>with retries;<br>deterministic rules as<br>tools; plan validator<br>that rejects bad plans;<br>recorded replays so the<br>demo never breaks; unit<br>+ e2e tests|One fixed ±4 noise<br>band for everyone;<br>attributes a change to<br>a product from start<br>date alone; no<br>capture comparability<br>check; browser-only<br>history|
+|A weekly check-in app in this round|Skin report, routine,<br>cart, weekly "is it<br>working?"|Simple weekly check-in<br>loop|Score deltas only|
+|A selfie-to-routine app in this round|Selfie → AM/PM routine<br>→ makeup VTO|Server-side key handling|No follow-up<br>evidence|
+|A round-one progress tracker|Five YouCam APIs, RAG<br>coach, progress with<br>simulation|Breadth of API use, live<br>deployment|Trend deltas, no<br>comparability check|
 
 
 
@@ -224,7 +224,7 @@ The demo must use fictional brand names: the rules ban third-party trademarks in
 
 ## **System architecture** 
 
-A fixed pipeline makes every consequential decision; the LLM sits at the edges. This copies the best of SkinAgent (quality gate, typed tools, grounding, traces) and Shelf Check (typed YouCam client, plan validator, replay cache), and drops the part that failed in SkinAgent's benchmark: an open-ended agent picking tools. 
+A fixed pipeline makes every consequential decision; the LLM sits at the edges. This copies the best of SkinAgent (quality gate, typed tools, grounding, traces) and the fixed-threshold tracker in this round (typed YouCam client, plan validator, replay cache), and drops the part that failed in SkinAgent's benchmark: an open-ended agent picking tools. 
 
 
 
@@ -241,7 +241,7 @@ The evidence engine is the part no competitor has; everything else is solid, con
 
 - **Backend:** FastAPI + SQLModel, Postgres (Neon or Supabase), object storage for photos and masks. A background worker polls YouCam tasks. 
 
-- **LLM:** one provider behind an adapter, with JSON-schema outputs. Claude or Qwen3-4B-Instruct both work; the adapter means the core app runs if the LLM is down. 
+- **LLM:** one provider behind an adapter, with JSON-schema outputs. A local model through Ollama, so no API key is needed; the adapter means the core app runs if the LLM is down or not installed. 
 
 ### **YouCam pipeline** 
 
@@ -412,15 +412,9 @@ Submit by the afternoon of 2 Nov; the deadline is 22:15 IST and the last evening
 
 - <u>Perfect Corp API conventons (community mirror)i</u> 
 
-- <u>zenn-youcam: SD/HD action list</u> 
+- Community write-up of the SD/HD action list 
 
-- <u>Shelf Check repository</u> 
-
-- <u>GlowPath repository</u> 
-
-- <u>SkinMirror repository</u> 
-
-- <u>Skinova write-up</u> 
+- Public code of four other hackathon entries (names withheld) 
 
 - <u>SkinAgent AI (arXiv 2609.29341)</u> 
 

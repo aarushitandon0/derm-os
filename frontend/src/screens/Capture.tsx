@@ -15,9 +15,10 @@ import {
   type FaceMetrics,
   type LightMetrics,
 } from "../capture/faceGuide";
-import { previewState, readPreview, type Preview } from "../capture/preview";
-import { ANALYSIS_STEPS, baselineWhere, CAPTURE, CONDITION, CONDITION_ROWS, CONDITION_STATE, PLACES, PRIVACY } from "../copy";
+import { previewState, readPreview, readUploadPreview, uploadPreviewState, type Preview } from "../capture/preview";
+import { ANALYSIS_STEPS, baselineWhere, CAPTURE, CONDITION, CONDITION_ROWS, CONDITION_STATE, PLACES, PRIVACY, UPLOAD } from "../copy";
 import { Icon, type IconName } from "../components/Icon";
+import { UploadPhotos } from "../components/UploadPhotos";
 import { Btn, NavBar, Notice, PageHead } from "../components/ui";
 import { go, href } from "../router";
 import { useStore } from "../store";
@@ -68,6 +69,13 @@ export default function Capture({ phase, trialId }: { phase: Phase; trialId?: st
     const kind = readPreview();
     return kind ? previewState(kind) : null;
   }, []);
+  const uploadPreview = useMemo(() => {
+    if (!import.meta.env.DEV) return null;
+    const kind = readUploadPreview();
+    return kind ? uploadPreviewState(kind) : null;
+  }, []);
+  // Take photos with the live camera, or upload them from the gallery. Same checks either way.
+  const [mode, setMode] = useState<"camera" | "upload">(uploadPreview ? "upload" : "camera");
 
   const rule: CaptureRule = meta?.capture
     ? { faceFrac: meta.capture.face_frac, targetFacePx: meta.capture.target_face_px.sd }
@@ -213,8 +221,10 @@ export default function Capture({ phase, trialId }: { phase: Phase; trialId?: st
 
   // ------------------------------------------------------------ camera
   useEffect(() => {
-    if (preview) return;
+    // The camera is only open while it's in use: switching to uploads turns it off.
+    if (preview || mode !== "camera") return;
     let cancelled = false;
+    setStage("starting");
     (async () => {
       if (!navigator.mediaDevices?.getUserMedia) {
         setError("This browser can't open the camera. Use a phone browser over https (or localhost).");
@@ -245,8 +255,9 @@ export default function Capture({ phase, trialId }: { phase: Phase; trialId?: st
     return () => {
       cancelled = true;
       streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
     };
-  }, [preview]);
+  }, [preview, mode]);
 
   // ------------------------------------------------------------ live checks
   useEffect(() => {
@@ -356,8 +367,6 @@ export default function Capture({ phase, trialId }: { phase: Phase; trialId?: st
     c.toBlob((b) => b && upload(b, m, true, taken), "image/jpeg", 0.92);
   };
   shootRef.current = shoot;
-
-  const fromFile = (file: File | undefined) => file && upload(file, null, false);
 
   const backToLive = () => {
     passSince.current = null;
@@ -483,6 +492,70 @@ export default function Capture({ phase, trialId }: { phase: Phase; trialId?: st
   const lede =
     phase === "baseline" ? CAPTURE.baselineLede : where ? `${where}. ${CAPTURE.sameSpot}` : CAPTURE.checkinLede;
 
+  const placePicker = phase === "baseline" && (
+    <fieldset className="placepick">
+      <legend className="placepick__q">{CAPTURE.placeQuestion}</legend>
+      <div className="chips">
+        {PLACES.map((p) => (
+          <button
+            key={p.value}
+            type="button"
+            className={`symchip${place === p.value ? " is-on" : ""}`}
+            aria-pressed={place === p.value}
+            onClick={() => setPlace(place === p.value ? null : p.value)}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+      <p className="formhelp">{CAPTURE.placeWhy}</p>
+    </fieldset>
+  );
+
+  const fixturePicker = demo && phase === "checkin" && (
+    <label className="field">
+      <span>Prepared scores</span>
+      <select value={fixtureSet} onChange={(e) => setFixtureSet(e.target.value)}>
+        <option value="">Matched check-in</option>
+        <option value="lamp">Warm-lamp check-in</option>
+      </select>
+    </label>
+  );
+
+  // ------------------------------------------------------------ upload instead
+  if (mode === "upload") {
+    return (
+      <div className="page page--flow">
+        <NavBar
+          left={
+            <a className="navtext" href={href(exitTo)}>
+              Cancel
+            </a>
+          }
+        />
+        <UploadPhotos
+          phase={phase}
+          trialId={trialId}
+          demo={demo}
+          fixtureSet={fixtureSet || null}
+          place={place}
+          placePicker={placePicker || null}
+          simulated={uploadPreview}
+          onDone={async () => {
+            await refresh();
+            finish();
+          }}
+          onCamera={() => {
+            setError(null);
+            setMode("camera");
+          }}
+        />
+        {fixturePicker && <div className="demobox">{fixturePicker}</div>}
+        {import.meta.env.DEV && uploadPreview && <p className="small muted">Dev preview: simulated upload, no photos.</p>}
+      </div>
+    );
+  }
+
   // The camera stays mounted through every stage so the stream survives between photos.
   const showCamera = stage === "starting" || stage === "live" || stage === "error";
   return (
@@ -549,25 +622,14 @@ export default function Capture({ phase, trialId }: { phase: Phase; trialId?: st
           </p>
         </div>
 
-        {phase === "baseline" && (
-          <fieldset className="placepick">
-            <legend className="placepick__q">{CAPTURE.placeQuestion}</legend>
-            <div className="chips">
-              {PLACES.map((p) => (
-                <button
-                  key={p.value}
-                  type="button"
-                  className={`symchip${place === p.value ? " is-on" : ""}`}
-                  aria-pressed={place === p.value}
-                  onClick={() => setPlace(place === p.value ? null : p.value)}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-            <p className="formhelp">{CAPTURE.placeWhy}</p>
-          </fieldset>
-        )}
+        <div className="uploadswitch">
+          <Btn kind={stage === "error" ? "primary" : "ghost"} onClick={() => setMode("upload")} wide icon="share">
+            {UPLOAD.instead}
+          </Btn>
+          <p className="formhelp">{UPLOAD.insteadWhy}</p>
+        </div>
+
+        {placePicker}
 
         {demo && (
           <div className="demobox">
@@ -575,26 +637,7 @@ export default function Capture({ phase, trialId }: { phase: Phase; trialId?: st
               <strong>Demo mode.</strong> Scores replay prepared data. Light, face size and angle are still measured from your
               real photo.
             </p>
-            {phase === "checkin" && (
-              <label className="field">
-                <span>Prepared scores</span>
-                <select value={fixtureSet} onChange={(e) => setFixtureSet(e.target.value)}>
-                  <option value="">Matched check-in</option>
-                  <option value="lamp">Warm-lamp check-in</option>
-                </select>
-              </label>
-            )}
-            <label className="filepick">
-              <span>Or use a photo (demo only, skips the live checks)</span>
-              <input
-                type="file"
-                accept="image/jpeg,image/png"
-                onChange={(e) => {
-                  fromFile(e.target.files?.[0]);
-                  e.target.value = ""; // so choosing the same file again still triggers a scan
-                }}
-              />
-            </label>
+            {fixturePicker}
           </div>
         )}
       </div>

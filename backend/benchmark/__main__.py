@@ -56,7 +56,8 @@ def markdown(outcomes: list[Outcome]) -> str:
         "Written and run by the derm//os team, so this is **not an independent evaluation**. "
         "Each case has an expected output written from the design doc before the engine was run. "
         "It shows the decision and evidence rules behave as designed; it says nothing about how accurate "
-        "YouCam's skin scores are. No YouCam calls, no units spent.",
+        "YouCam's skin scores are. No YouCam calls, no units spent. The LLM cases use a scripted stand-in "
+        "provider (no network): they test the fallback and the claim validator, not any real model.",
         "",
         "Run: `cd backend; python -m benchmark` (also runs under `python -m pytest`).",
         "",
@@ -66,8 +67,9 @@ def markdown(outcomes: list[Outcome]) -> str:
     groups = by_category(outcomes)
     for cat, os_ in groups.items():
         lines.append(f"| {cat} | {sum(o.passed for o in os_)} / {len(os_)} |")
-    lines += ["", "## Not benchmarked yet", "", "| Design row | Why |", "| --- | --- |"]
-    lines += [f"| {_cell(r)} | {_cell(why)} |" for r, why in C.NOT_BUILT]
+    if C.NOT_BUILT:
+        lines += ["", "## Not benchmarked yet", "", "| Design row | Why |", "| --- | --- |"]
+        lines += [f"| {_cell(r)} | {_cell(why)} |" for r, why in C.NOT_BUILT]
     fails = [o for o in outcomes if not o.passed]
     if fails:
         lines += ["", "## Failing cases", "", "| Case | Checks | Expected | Actual |", "| --- | --- | --- | --- |"]
@@ -90,7 +92,8 @@ def main() -> int:
         print(f"  {cat:<{width}}  {sum(o.passed for o in os_):>2} / {len(os_)}")
     passed = sum(o.passed for o in outcomes)
     print(f"\n  {'Total':<{width}}  {passed:>2} / {len(outcomes)}")
-    print(f"  Not benchmarked yet: {len(C.NOT_BUILT)} design rows (no LLM layer built)")
+    if C.NOT_BUILT:
+        print(f"  Not benchmarked yet: {len(C.NOT_BUILT)} design rows")
     for o in outcomes:
         if not o.passed:
             print(f"\n  FAIL {o.case.id} ({o.case.category}): {o.case.checks}\n"

@@ -62,6 +62,11 @@ class Status(str, Enum):
     PASS = "pass"
     BLOCKED = "blocked"
     UNKNOWN = "unknown"
+    # No ingredient exclusions recorded: nothing was checked, so this is neutral, never a pass.
+    NOTHING_TO_CHECK = "nothing_to_check"
+
+
+INCOMPLETE_TAG = "ingredient_list_incomplete"
 
 
 @dataclass
@@ -70,14 +75,17 @@ class Check:
     status: Status
     reasons: list[str] = field(default_factory=list)
     matches: list[dict] = field(default_factory=list)   # {"label_line": ..., "matched": ..., "record": ...}
+    # Shown whatever the status. INCOMPLETE_TAG whenever the label's ingredient list is incomplete.
+    tags: list[str] = field(default_factory=list)
 
     def to_dict(self):
         return {"product_id": self.product_id, "status": self.status.value,
-                "reasons": self.reasons, "matches": self.matches}
+                "reasons": self.reasons, "matches": self.matches, "tags": self.tags}
 
 
 def check_product(p: Product, records: list[HistoryRecord]) -> Check:
     reasons, matches = [], []
+    tags = [] if p.inci_complete else [INCOMPLETE_TAG]
     for r in records:
         if r.type == RecordType.SUSPECTED_REACTION and r.product_id == p.id:
             reasons.append(f"You reported a reaction to {p.name}.")
@@ -93,13 +101,17 @@ def check_product(p: Product, records: list[HistoryRecord]) -> Check:
                 matches.append({"label_line": raw.strip(), "matched": canon, "record": r.type.value})
 
     if matches:
-        return Check(p.id, Status.BLOCKED, reasons, matches)
-    if ingredient_records and not p.inci_complete:
+        return Check(p.id, Status.BLOCKED, reasons, matches, tags)
+    if not ingredient_records:
+        # A product-level reaction elsewhere says nothing about this product's ingredients.
+        return Check(p.id, Status.NOTHING_TO_CHECK,
+                     ["Nothing to check against yet: you haven't recorded an ingredient to avoid. "
+                      "This is not a pass."], tags=tags)
+    if not p.inci_complete:
         return Check(p.id, Status.UNKNOWN,
                      ["The full ingredient list isn't available, so your exclusions can't be checked. "
-                      "This is not a pass."])
-    return Check(p.id, Status.PASS, ["No match with your recorded exclusions." if ingredient_records or records
-                                     else "No exclusions recorded yet."])
+                      "This is not a pass."], tags=tags)
+    return Check(p.id, Status.PASS, ["No match with your recorded exclusions."], tags=tags)
 
 
 @dataclass
@@ -121,7 +133,9 @@ class RoutineResult:
     added: list[str]
     replaced: list[dict]                 # {"out": id, "in": id}
     kept: list[str]
-    new_spend_inr: int
+    stopped: list[str]                   # products you'd stop using (replaced ones)
+    step_count: int                      # number of steps after the change
+    new_spend_inr: int                   # price of the new product(s): you buy them whether added or replacing
     duplicate_roles: list[str]
     checks: list[Check]
     blocked: bool
@@ -176,6 +190,8 @@ def build(current: list[str], option: Option, cat: dict[str, Product],
         added=added,
         replaced=replaced,
         kept=kept,
+        stopped=[r["out"] for r in replaced],
+        step_count=len(steps),
         new_spend_inr=sum(cat[i].price_inr for i in new_ids),
         duplicate_roles=dup,
         checks=checks,

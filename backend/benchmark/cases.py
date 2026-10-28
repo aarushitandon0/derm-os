@@ -2,14 +2,15 @@
 table), what it checks, the expected output written from the design, and a function
 that returns the engine's actual output. Pass = actual == expected.
 
-Expected values come from the design ("derm os — Research, Product & System Design.md",
-section "Evidence benchmark"), not from running the engine. If a case fails, the
+Expected values come from the design (docs/DESIGN.md, section "Evidence benchmark"),
+not from running the engine. If a case fails, the
 engine and the design disagree: report it, don't edit the engine to match.
 """
 from __future__ import annotations
 
 import importlib
 import io
+import json
 import os
 import tempfile
 from contextlib import contextmanager
@@ -19,6 +20,10 @@ from typing import Any, Callable
 from app import decision as D
 from app import evidence as E
 from app.fingerprint import Fingerprint
+from app.llm import explain as LX
+from app.llm import intake as LI
+
+from .fakes import ScriptedProvider
 
 CAT = D.load_catalog()
 CURRENT = ["cl-01", "sr-01", "mo-01", "sp-01"]   # cleanser, niacinamide serum, barrier cream, SPF
@@ -46,17 +51,16 @@ SYMPTOMS = "Symptoms outrank improved scores"
 PERSISTS = "Unresolved stop symptom persists"
 NO_BASELINE = "Missing baseline: no trend claim"
 WORDING = "Wording never claims cause"
+NOTHING = "No exclusions recorded: nothing to check, never a pass"
+LLM_DOWN = "LLM down or draft rejected: templates shown, core flow unaffected"
+LLM_VALIDATOR = "LLM draft overclaims (\"caused by\" etc.): validator rejects it"
+LLM_INTAKE = "LLM intake proposes; the user confirms"
 
-CATEGORIES = [EXCLUSION, SYNONYM, INCOMPLETE, REACTION, ADD_REPLACE, SEVERAL, OVERLAP,
-              NOT_COMPARABLE, SYMPTOMS, PERSISTS, NO_BASELINE, WORDING]
+CATEGORIES = [EXCLUSION, SYNONYM, INCOMPLETE, NOTHING, REACTION, ADD_REPLACE, SEVERAL, OVERLAP,
+              NOT_COMPARABLE, SYMPTOMS, PERSISTS, NO_BASELINE, WORDING, LLM_DOWN, LLM_VALIDATOR, LLM_INTAKE]
 
-# Rows of the design table this benchmark cannot test yet, with the reason.
-NOT_BUILT = [
-    ("LLM down or draft rejected: templates shown, core flow unaffected",
-     "No LLM layer is built yet. All on-screen wording is fixed template text, so the core flow never depends on an LLM."),
-    ("LLM draft says \"caused by\": validator rejects it",
-     "No LLM layer or claim validator is built yet. The 'Wording never claims cause' cases check the fixed templates instead."),
-]
+# Rows of the design table this benchmark cannot test yet, with the reason. None left.
+NOT_BUILT: list[tuple[str, str]] = []
 
 
 # ---------------------------------------------------------------- helpers
@@ -75,12 +79,18 @@ def lines(pid: str, *records: D.HistoryRecord) -> list[str]:
 AVOID_FRAGRANCE = rec("avoid", ingredient="fragrance")
 
 
-def fp(lum=0.55, rb=1.20, face=0.70, yaw=0.0, device="PhoneX", hour=10):
-    return Fingerprint(1080, 1440, lum, rb, device, hour, face, yaw, 0.0, 0.0)
+def fp(lum=0.55, rb=1.20, face=0.70, yaw=0.0, device="PhoneX", hour=10, device_source=None):
+    return Fingerprint(1080, 1440, lum, rb, device, hour, face, yaw, 0.0, 0.0, device_source=device_source)
 
 
 def cap(score, mode="sd", **kw):
     return E.Capture({"redness": score}, fp(**kw), mode, ("redness",))
+
+
+def device_gate(base_kw: dict, follow_kw: dict) -> tuple:
+    """(comparable, failed fields, not-compared fields) for a device-only difference."""
+    c = E.compare_conditions(caps(60, 62, **base_kw), caps(61, 63, **follow_kw))
+    return c.comparable, sorted({f["field"] for f in c.failed}), [n["field"] for n in c.not_compared]
 
 
 def caps(*scores, **kw):
@@ -227,6 +237,68 @@ def compare_q(mode):
     return D.compare(CURRENT, [D.Option("B", [D.OptionItem("mo-03", mode)])], CAT, [])["next_question"]
 
 
+def tags(pid: str, *records: D.HistoryRecord) -> tuple:
+    c = D.check_product(CAT[pid], list(records))
+    return c.status.value, c.tags
+
+
+# ---------------------------------------------------------------- LLM (scripted provider, no network)
+def _rec_no_change() -> tuple[dict, str]:
+    rep = E.evaluate(caps(60, 64), caps(62, 63), E.TrialContext(), concerns=["redness"]).to_dict()
+    return LX.record_for(rep, CAT["sr-04"], "redness"), rep["message"]
+
+
+def explain_with(*outputs) -> dict:
+    """outputs empty = LLM off."""
+    rec, template = _rec_no_change()
+    out = LX.explain(rec, template, CAT, ScriptedProvider(*outputs) if outputs else None)
+    return {**out, "is_template": out["text"] == template}
+
+
+def rejects(draft: str) -> str | None:
+    return LX.validate(draft, _rec_no_change()[0], CAT)
+
+
+def intake_json(*recs) -> str:
+    return json.dumps({"records": [{"product": None, "ingredient": None, "clinician_confirmed": False, **r}
+                                   for r in recs]})
+
+
+INTAKE_TEXT = "I broke out from a fragranced moisturiser last year and my dermat said I'm allergic to lanolin"
+INTAKE_GOOD = intake_json(
+    {"kind": "product_reaction", "product": "fragranced moisturiser", "quote": "I broke out from a fragranced moisturiser"},
+    {"kind": "ingredient_allergy", "ingredient": "lanolin", "clinician_confirmed": True,
+     "quote": "my dermat said I'm allergic to lanolin"})
+
+
+def intake(text: str, *outputs) -> dict:
+    return LI.propose(text, CAT, ScriptedProvider(*outputs))
+
+
+def first_proposal(text: str, *recs) -> dict:
+    return intake(text, intake_json(*recs))["proposals"][0]
+
+
+def api_llm(outputs: tuple, path: str):
+    """The real API with a scripted provider (outputs empty = LLM off)."""
+    with api([60, 62, 61, 63]) as c:
+        import app.main as m
+        original = m.L.get_provider
+        m.L.get_provider = (lambda: ScriptedProvider(*outputs)) if outputs else (lambda: None)
+        try:
+            if path == "intake":
+                r = c.post("/api/history/intake", json={"text": INTAKE_TEXT}).json()
+                return [p["type"] for p in r["proposals"]], c.get("/api/history").json()
+            tid = _trial(c)
+            for ph in ("baseline", "baseline", "checkin", "checkin"):
+                _scan(c, tid, ph)
+            ev = c.get(f"/api/trials/{tid}/evidence")
+            ex = c.get(f"/api/trials/{tid}/explanation").json()
+            return ev.status_code, ex["source"], ex["text"] == ev.json()["report"]["message"]
+        finally:
+            m.L.get_provider = original
+
+
 V = E.Verdict
 
 # ---------------------------------------------------------------- the cases
@@ -268,10 +340,26 @@ CASES: list[Case] = [
     Case("inc-05", INCOMPLETE, "Compare column lists it under unknowns and doesn't call it blocked", (["mo-04"], False),
          lambda: (lambda col: (col["unknowns"], col["blocked"]))(D.compare(
              CURRENT, [D.Option("B", [D.OptionItem("mo-04", "replace")])], CAT, [AVOID_FRAGRANCE])["columns"][1])),
+    # Nothing to check
+    Case("nt-01", NOTHING, "No records at all: a complete product is 'nothing to check'", "nothing_to_check",
+         lambda: status("mo-01")),
+    Case("nt-02", NOTHING, "Every catalog product with no records: none says 'pass'", [],
+         lambda: [p for p in CAT if status(p) == "pass"]),
+    Case("nt-03", NOTHING, "The reason says it is not a pass", True,
+         lambda: "not a pass" in D.check_product(CAT["mo-01"], []).reasons[0]),
+    Case("nt-04", NOTHING, "Incomplete list, no exclusions: nothing to check AND tagged incomplete",
+         ("nothing_to_check", [D.INCOMPLETE_TAG]), lambda: tags("mo-04")),
+    Case("nt-05", NOTHING, "Incomplete list, avoid fragrance: unknown AND tagged incomplete",
+         ("unknown", [D.INCOMPLETE_TAG]), lambda: tags("mo-04", AVOID_FRAGRANCE)),
+    Case("nt-06", NOTHING, "Incomplete list that lists the avoided ingredient: blocked AND tagged incomplete",
+         ("blocked", [D.INCOMPLETE_TAG]), lambda: tags("cl-04", rec("avoid", ingredient="niacinamide"))),
+    Case("nt-07", NOTHING, "A complete list is never tagged incomplete", ("pass", []),
+         lambda: tags("mo-01", AVOID_FRAGRANCE)),
     # Product-level reaction
     Case("pr-01", REACTION, "Reaction to Velvet Rose blocks Velvet Rose", "blocked",
          lambda: status("mo-02", rec("suspected_reaction", product_id="mo-02"))),
-    Case("pr-02", REACTION, "Rose toner sharing Linalool is not blocked (no ingredient allergy invented)", "pass",
+    Case("pr-02", REACTION, "Rose toner sharing Linalool is not blocked (no ingredient allergy invented); "
+         "with no ingredient exclusions it is 'nothing to check'", "nothing_to_check",
          lambda: status("tn-03", rec("suspected_reaction", product_id="mo-02"))),
     Case("pr-03", REACTION, "A reaction record must name a product", "ValueError",
          lambda: raises(lambda: rec("suspected_reaction", ingredient="fragrance"))),
@@ -289,6 +377,12 @@ CASES: list[Case] = [
          lambda: (lambda q: (q["choices"], "Water Gel Moisturiser" in q["text"] and "Daily Barrier Cream" in q["text"]))(
              compare_q(None))),
     Case("ar-05", ADD_REPLACE, "Answered 'replace': the question goes away", None, lambda: compare_q("replace")),
+    Case("ar-06", ADD_REPLACE, "Add: 5 steps after, stop using nothing", (5, []),
+         lambda: (lambda r: (r.step_count, r.stopped))(build(("mo-03", "add")))),
+    Case("ar-07", ADD_REPLACE, "Replace: 4 steps after, stop using the Daily Barrier Cream", (4, ["mo-01"]),
+         lambda: (lambda r: (r.step_count, r.stopped))(build(("mo-03", "replace")))),
+    Case("ar-08", ADD_REPLACE, "'Replace' with nothing in that role adds a step and stops nothing", (5, [], ["tr-02"]),
+         lambda: (lambda r: (r.step_count, r.stopped, r.added))(build(("tr-02", "replace")))),
     # Several changes
     Case("sc-01", SEVERAL, "Two new leave-on products and scores moved", V.SEVERAL_CHANGES.value,
          lambda: verdict(caps(60, 62), caps(70, 71), new=2)),
@@ -318,6 +412,13 @@ CASES: list[Case] = [
     Case("nc-08", NOT_COMPARABLE, "Every mismatch carries a re-guide fix", True,
          lambda: (lambda c: bool(c.failed) and all(f["fix"] for f in c.failed) and bool(c.fixes))(
              E.compare_conditions(caps(60, 62), caps(70, 71, lum=0.3, face=0.5, hour=20)))),
+    Case("nc-11", NOT_COMPARABLE, "Same label source (both live camera), different camera: fails",
+         (False, ["device"], []),
+         lambda: device_gate({"device_source": "client"}, {"device": "PhoneY", "device_source": "client"})),
+    Case("nc-12", NOT_COMPARABLE, "Photo-file label vs live-camera label: device 'not compared', pair still comparable",
+         (True, [], ["device"]),
+         lambda: device_gate({"device": "Acme Phone 7", "device_source": "exif"},
+                             {"device": "Front Camera", "device_source": "client"})),
     Case("nc-09", NOT_COMPARABLE, "Not comparable outranks big score gains", V.NOT_COMPARABLE.value,
          lambda: verdict(caps(60, 62), caps(80, 81, rb=1.60))),
     Case("nc-10", NOT_COMPARABLE, "Small light change within tolerance stays comparable", V.NO_CHANGE.value,
@@ -355,4 +456,53 @@ CASES: list[Case] = [
          lambda: [v.value for v, t in E.VERDICT_TEXT.items() if "caused" in t.lower() or "because of" in t.lower()]),
     Case("wd-02", WORDING, "Strongest result says 'during the trial' and 'does not prove'", (True, True),
          lambda: (lambda m: ("during the trial" in m, "does not prove" in m))(report(caps(60, 62), caps(70, 71)).message)),
+    # LLM down or draft rejected (scripted provider, no network)
+    Case("llm-01", LLM_DOWN, "LLM off: explanation is the template", ("template", True),
+         lambda: (lambda o: (o["source"], o["is_template"]))(explain_with())),
+    Case("llm-02", LLM_DOWN, "Provider times out twice (one retry): template", ("template", "provider_failed", True),
+         lambda: (lambda o: (o["source"], o["rejected"], o["is_template"]))(explain_with(TimeoutError(), TimeoutError()))),
+    Case("llm-03", LLM_DOWN, "Rejected draft: template shown", ("template", True),
+         lambda: (lambda o: (o["source"], o["is_template"]))(explain_with("The serum caused this."))),
+    Case("llm-04", LLM_DOWN, "A clean draft passes and is used", "llm",
+         lambda: explain_with("Your redness scores sit inside your own range, so no detectable change yet.")["source"]),
+    Case("llm-05", LLM_DOWN, "API, LLM off: evidence and explanation work, template text", (200, "template", True),
+         lambda: api_llm((), "explain")),
+    Case("llm-06", LLM_DOWN, "API, provider failing: same template, core flow unaffected", (200, "template", True),
+         lambda: api_llm((TimeoutError(), TimeoutError()), "explain")),
+    Case("llm-07", LLM_DOWN, "Intake output that isn't JSON is rejected: no proposals", ([], "not_json"),
+         lambda: (lambda o: (o["proposals"], o["rejected"]))(intake("I avoid fragrance", "Sure! Fragrance."))),
+    # Claim validator
+    Case("llm-08", LLM_VALIDATOR, "Draft says 'caused by'", "causal_wording",
+         lambda: rejects("Your redness was caused by the serum.")),
+    Case("llm-09", LLM_VALIDATOR, "Draft says 'thanks to'", "causal_wording",
+         lambda: rejects("Redness sits in range thanks to the serum.")),
+    Case("llm-10", LLM_VALIDATOR, "Draft names a diagnosis", "diagnosis_word", lambda: rejects("This may be rosacea.")),
+    Case("llm-11", LLM_VALIDATOR, "Draft names a product not in the record", "name_not_in_record",
+         lambda: rejects("Try Velvet Rose Moisturiser next.")),
+    Case("llm-12", LLM_VALIDATOR, "Draft claims improvement when the verdict is 'no detectable change'",
+         "stronger_verdict", lambda: rejects("Your redness improved.")),
+    Case("llm-13", LLM_VALIDATOR, "Draft gives a number not in the record", "number_not_in_record",
+         lambda: rejects("Your redness moved 17 points.")),
+    # Intake
+    Case("llm-14", LLM_INTAKE, "Example text: product reaction + clinician-confirmed lanolin allergy",
+         [("suspected_reaction", None, None), ("confirmed_allergy", None, "lanolin")],
+         lambda: [(p["type"], p["product_id"], p["ingredient"]) for p in intake(INTAKE_TEXT, INTAKE_GOOD)["proposals"]]),
+    Case("llm-15", LLM_INTAKE, "Unmatched product stays as typed text and needs confirmation",
+         ("fragranced moisturiser", False, ["product_id"]),
+         lambda: (lambda p: (p["product_text"], p["product_matched"], p["needs_confirmation"]))(
+             intake(INTAKE_TEXT, INTAKE_GOOD)["proposals"][0])),
+    Case("llm-16", LLM_INTAKE, "LLM attaches an ingredient to a product reaction: dropped, stays product-level",
+         ("suspected_reaction", "mo-02", None),
+         lambda: (lambda p: (p["type"], p["product_id"], p["ingredient"]))(first_proposal(
+             "Velvet Rose Moisturiser made me itchy",
+             {"kind": "product_reaction", "product": "Velvet Rose Moisturiser", "ingredient": "fragrance",
+              "clinician_confirmed": True, "quote": "Velvet Rose Moisturiser made me itchy"}))),
+    Case("llm-17", LLM_INTAKE, "Allergy with no clinician in the text: proposed as 'avoid', type needs confirmation",
+         ("avoid", True),
+         lambda: (lambda p: (p["type"], "type" in p["needs_confirmation"]))(first_proposal(
+             "I'm allergic to lanolin",
+             {"kind": "ingredient_allergy", "ingredient": "lanolin", "clinician_confirmed": True,
+              "quote": "I'm allergic to lanolin"}))),
+    Case("llm-18", LLM_INTAKE, "API intake proposes but saves nothing",
+         (["suspected_reaction", "confirmed_allergy"], []), lambda: api_llm((INTAKE_GOOD,), "intake")),
 ]

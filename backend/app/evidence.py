@@ -101,10 +101,12 @@ class Comparability:
     # which fields had data on both sides, and each mismatch with its own fix.
     checked: list[str] = field(default_factory=list)
     failed: list[dict] = field(default_factory=list)   # {"field", "reason", "fix"}
+    # Fields with data on both sides that still can't be compared fairly. Neutral: never fail the pair.
+    not_compared: list[dict] = field(default_factory=list)   # {"field", "reason"}
 
     def to_dict(self) -> dict:
         return {"comparable": self.comparable, "reasons": self.reasons, "fixes": self.fixes,
-                "checked": self.checked, "failed": self.failed}
+                "checked": self.checked, "failed": self.failed, "not_compared": self.not_compared}
 
 
 def _avg(vals):
@@ -112,8 +114,16 @@ def _avg(vals):
     return mean(vals) if vals else None
 
 
+def _device_source(f: Fingerprint) -> str | None:
+    """Where the device label came from. Fingerprints saved before `device_source` existed
+    only ever took the device from EXIF, so a label with no source is an EXIF label."""
+    if not f.device:
+        return None
+    return f.device_source or "exif"
+
+
 def compare_conditions(base: list[Capture], follow: list[Capture], tol: dict = TOLERANCES) -> Comparability:
-    reasons, fixes, checked, failed = [], [], [], []
+    reasons, fixes, checked, failed, not_compared = [], [], [], [], []
 
     def miss(field_name: str, reason: str, fix: str) -> None:
         reasons.append(reason)
@@ -167,9 +177,17 @@ def compare_conditions(base: list[Capture], follow: list[Capture], tol: dict = T
     bdev = {f.device for f in bf if f.device}
     fdev = {f.device for f in ff if f.device}
     if bdev and fdev:
-        checked.append("device")
-        if bdev.isdisjoint(fdev):
-            miss("device", "A different camera was used.", "Use the same phone as your baseline.")
+        # An EXIF label ("Acme Phone 7") and a live-camera label ("Front Camera") name the same
+        # phone differently, so labels are compared only when every one came from the same source.
+        sources = {_device_source(f) for f in bf + ff if f.device}
+        if len(sources) == 1:
+            checked.append("device")
+            if bdev.isdisjoint(fdev):
+                miss("device", "A different camera was used.", "Use the same phone as your baseline.")
+        else:
+            not_compared.append({"field": "device",
+                                 "reason": "Camera labels came from different sources (photo file vs live camera), "
+                                           "so they can't be compared."})
 
     bh, fh = _avg([f.captured_hour for f in bf]), _avg([f.captured_hour for f in ff])
     if bh is not None and fh is not None:
@@ -180,7 +198,7 @@ def compare_conditions(base: list[Capture], follow: list[Capture], tol: dict = T
             miss("time_of_day", "Taken at a very different time of day.",
                  "Scan at roughly the same time of day as your baseline.")
 
-    return Comparability(not reasons, reasons, list(dict.fromkeys(fixes)), checked, failed)
+    return Comparability(not reasons, reasons, list(dict.fromkeys(fixes)), checked, failed, not_compared)
 
 
 @dataclass

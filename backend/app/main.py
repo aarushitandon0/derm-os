@@ -27,6 +27,7 @@ from . import decision as D
 from . import demo
 from . import evidence as E
 from . import guard as G
+from . import llm as L
 from .fingerprint import Fingerprint, measure
 from .settings import flag
 from .youcam import (YouCamClient, YouCamError, check_unit_reserve, delete_task_quietly,
@@ -131,7 +132,9 @@ def health(x_live_passcode: str | None = Header(None)):
             "demo_mode": not live, "server_demo_mode": demo_mode(),
             "live_scans": G.live_scans_setting(), "passcode": G.passcode_status(x_live_passcode),
             "personas": demo.personas() if not live else {},
-            "unit_reserve": unit_reserve(), "rules": [D.RULE_VERSION, E.RULE_VERSION]}
+            "unit_reserve": unit_reserve(), "rules": [D.RULE_VERSION, E.RULE_VERSION],
+            # Only whether the optional language layer is on, never which key.
+            "llm": L.get_provider() is not None}
 
 
 @app.get("/api/catalog")
@@ -156,6 +159,17 @@ def add_record(r: RecordIn):
     if r.product_id and r.product_id not in CATALOG:
         raise HTTPException(404, f"Unknown product {r.product_id}")
     return put("history", r.model_dump(mode="json"))
+
+
+class IntakeIn(BaseModel):
+    text: str = Field(min_length=1, max_length=1000)
+
+
+@app.post("/api/history/intake")
+def history_intake(body: IntakeIn):
+    """Free text -> PROPOSED records. Saves nothing: the user confirms each one, which then
+    goes through POST /api/history like any typed record."""
+    return L.propose(body.text, CATALOG, L.get_provider())
 
 
 @app.get("/api/history")
@@ -453,6 +467,29 @@ def trial_evidence(tid: str):
                        for c, raw in zip(slim, caps)],
             "baseline_ranges": {k: r.to_dict() for k, r in E.ranges(base).items()},
             "timeline": _timeline(t, slim, reactions)}
+
+
+_EXPLAIN_CACHE: dict[str, dict] = {}
+
+
+@app.get("/api/trials/{tid}/explanation")
+def trial_explanation(tid: str):
+    """1-3 plain sentences about the stored result, checked by the claim validator.
+    Falls back to the verdict template whenever the LLM is off, fails or is rejected."""
+    ev = trial_evidence(tid)
+    report, t = ev["report"], ev["trial"]
+    confirmed = any(r["type"] == D.RecordType.CONFIRMED_ALLERGY.value for r in all_("history"))
+    record = L.record_for(report, CATALOG[t["product_id"]], t["goal_concern"], confirmed)
+    provider = L.get_provider()
+    if provider is None:
+        return {"text": report["message"], "source": "template", "rejected": None}
+    key = json.dumps(record, sort_keys=True)
+    if key in _EXPLAIN_CACHE:
+        return _EXPLAIN_CACHE[key]
+    out = L.explain_result(record, report["message"], CATALOG, provider)
+    if out["rejected"] != "provider_failed":   # a timeout is retried next time; a verdict on a draft is kept
+        _EXPLAIN_CACHE[key] = out
+    return out
 
 
 class ResolveIn(BaseModel):

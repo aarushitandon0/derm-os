@@ -70,7 +70,8 @@ def test_product_reaction_blocks_only_that_product():
     recs = [D.HistoryRecord(D.RecordType.SUSPECTED_REACTION, product_id="mo-02")]
     assert D.check_product(CAT["mo-02"], recs).status == D.Status.BLOCKED
     # Another product sharing ingredients (Parfum, Linalool) is NOT blocked: no ingredient allergy invented.
-    assert D.check_product(CAT["tn-03"], recs).status == D.Status.PASS
+    # With no ingredient exclusions recorded it is "nothing to check", never a pass.
+    assert D.check_product(CAT["tn-03"], recs).status == D.Status.NOTHING_TO_CHECK
 
 
 def test_reaction_record_requires_product():
@@ -174,3 +175,26 @@ def test_missing_baseline_gives_no_trend_claim():
 def test_noise_summary_reports_range():
     s = E.noise_summary([cap(60), cap(63.5), cap(61)])
     assert s["redness"]["range"] == 3.5 and s["redness"]["n"] == 3
+
+
+# ---------------------------------------------------------------- nothing to check / incomplete tag
+def test_no_ingredient_exclusions_is_nothing_to_check_never_pass():
+    for pid in CAT:
+        c = D.check_product(CAT[pid], [])
+        assert c.status == D.Status.NOTHING_TO_CHECK and "not a pass" in c.reasons[0]
+
+
+def test_incomplete_tag_shows_whatever_the_status():
+    avoid = lambda i: [D.HistoryRecord(D.RecordType.AVOID, ingredient=i)]  # noqa: E731
+    cases = [(CAT["mo-04"], []), (CAT["mo-04"], avoid("fragrance")), (CAT["cl-04"], avoid("niacinamide"))]
+    statuses = [D.check_product(p, r) for p, r in cases]
+    assert [c.status for c in statuses] == [D.Status.NOTHING_TO_CHECK, D.Status.UNKNOWN, D.Status.BLOCKED]
+    assert all(c.tags == [D.INCOMPLETE_TAG] for c in statuses)
+    assert D.check_product(CAT["mo-01"], avoid("fragrance")).tags == []
+
+
+def test_compare_shows_steps_after_and_products_you_stop_using():
+    add = D.build(CURRENT, D.Option("A", [D.OptionItem("mo-03", "add")]), CAT, [])
+    rep = D.build(CURRENT, D.Option("A", [D.OptionItem("mo-03", "replace")]), CAT, [])
+    assert (add.step_count, add.stopped) == (5, [])
+    assert (rep.step_count, rep.stopped) == (4, ["mo-01"])

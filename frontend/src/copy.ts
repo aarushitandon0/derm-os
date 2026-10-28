@@ -66,7 +66,10 @@ export const CHECK: Record<CheckStatus, { label: string }> = {
   pass: { label: "No conflict found" },
   blocked: { label: "Blocked" },
   unknown: { label: "Unknown, not a pass" },
+  nothing_to_check: { label: "Nothing to check against yet" },
 };
+export const INCOMPLETE_TAG = "ingredient_list_incomplete";
+export const INCOMPLETE_LABEL = "Ingredient list incomplete";
 
 export const CONCERN_LABEL: Record<string, string> = {
   redness: "Redness",
@@ -138,6 +141,7 @@ export const CONDITION_STATE = {
   liveCheck: "Passed the live check",
   recorded: "Recorded for your baseline",
   notRecorded: "Not recorded for this photo, so not compared",
+  notCompared: "Not compared",
 };
 
 // The analysing steps follow the real request: upload, wait for analysis, response, refresh.

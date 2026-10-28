@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, type Evidence } from "../api";
-import { addDays, CHECK, concernLabel, daysSince, fmtDate, fmtLong, symptomLabel } from "../copy";
+import { addDays, CHECK, concernLabel, daysSince, fmtDate, fmtLong, INCOMPLETE_TAG, symptomLabel } from "../copy";
 import { buildIcs, downloadIcs, upcomingCheckins } from "../ics";
 import { Icon } from "../components/Icon";
 import { ProductArt } from "../components/ProductArt";
 import { StopCard } from "../components/Reactions";
 import { TrialNotes } from "../components/TrialNotes";
-import { Btn, Loading, NavBar, Notice, RowLink, Section } from "../components/ui";
+import { Btn, IncompleteTag, Loading, NavBar, Notice, RowLink, Section } from "../components/ui";
 import { useStore } from "../store";
 
 export default function Trial({ id }: { id: string }) {
@@ -82,7 +82,10 @@ export default function Trial({ id }: { id: string }) {
           {t.checkpoints_days.map((d) => `day ${d}`).join(" and ")} are compared with your baseline range, using your personal
           noise floor.
         </p>
-        {t.check.status === "unknown" && <p className="small muted">{t.check.reasons[0]}</p>}
+        {(t.check.status === "unknown" || t.check.status === "nothing_to_check") && (
+          <p className="small muted">{t.check.reasons[0]}</p>
+        )}
+        {(t.check.tags?.includes(INCOMPLETE_TAG) || !p.inci_complete) && <IncompleteTag />}
       </Section>
 
       <div className="actions">

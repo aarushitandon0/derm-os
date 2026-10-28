@@ -231,3 +231,8 @@ export function RowLink({
     </button>
   );
 }
+
+/** Shown on any product whose ingredient list is incomplete, whatever its exclusion status. */
+export function IncompleteTag() {
+  return <span className="tag tag--unknown">Ingredient list incomplete</span>;
+}

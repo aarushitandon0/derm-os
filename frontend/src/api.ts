@@ -44,12 +44,15 @@ export interface HistoryRecord {
   note: string;
 }
 
-export type CheckStatus = "pass" | "blocked" | "unknown";
+// nothing_to_check: no ingredient exclusions recorded yet. Neutral, never a pass.
+export type CheckStatus = "pass" | "blocked" | "unknown" | "nothing_to_check";
 export interface Check {
   product_id: string;
   status: CheckStatus;
   reasons: string[];
   matches: { label_line: string | null; matched: string; record: RecordType }[];
+  // Shown whatever the status: "ingredient_list_incomplete" when the label isn't fully known.
+  tags?: string[];
 }
 
 export interface Question {
@@ -65,7 +68,9 @@ export interface Column {
   added: string[];
   replaced: { out: string; in: string }[];
   kept: string[];
-  new_spend_inr: number;
+  stopped: string[]; // products you'd stop using (replaced ones)
+  step_count: number; // steps after the change
+  new_spend_inr: number; // the new product's price: you buy it whether it adds or replaces
   duplicate_roles: string[];
   checks: Check[];
   blocked: boolean;
@@ -131,6 +136,8 @@ export interface Comparability {
   // Same result per field: which had data on both sides, and each mismatch with its fix.
   checked?: ConditionField[];
   failed?: { field: ConditionField; reason: string; fix: string }[];
+  // Data on both sides but not comparable fairly (e.g. camera labels from different sources). Never fails the pair.
+  not_compared?: { field: ConditionField; reason: string }[];
 }
 
 export interface Reaction {
@@ -204,6 +211,34 @@ export interface Health {
   personas: Record<string, string[]>;
   unit_reserve: number;
   rules?: string[];
+  /** Whether the optional language layer (intake + explanations) is on. */
+  llm?: boolean;
+}
+
+export interface Proposal {
+  id: string;
+  type: RecordType;
+  product_id: string | null;
+  product_text: string | null;
+  product_matched: boolean;
+  ingredient: string | null;
+  note: string;
+  needs_confirmation: ("type" | "product_id" | "ingredient")[];
+  hints: string[];
+  quote: string;
+}
+
+export interface IntakeResult {
+  available: boolean;
+  proposals: Proposal[];
+  rejected: string | null;
+  dropped: number;
+}
+
+export interface Explanation {
+  text: string;
+  source: "llm" | "template";
+  rejected: string | null;
 }
 
 export interface Meta {
@@ -304,6 +339,8 @@ export const api = {
   setShelf: (ids: string[]) => call<{ product_ids: string[] }>("/api/shelf", json("PUT", { product_ids: ids })),
   history: () => call<HistoryRecord[]>("/api/history"),
   addRecord: (r: Omit<HistoryRecord, "id">) => call<HistoryRecord>("/api/history", json("POST", r)),
+  intake: (text: string) => call<IntakeResult>("/api/history/intake", json("POST", { text })),
+  explanation: (trialId: string) => call<Explanation>(`/api/trials/${trialId}/explanation`),
   removeRecord: (id: string) => call<unknown>(`/api/history/${id}`, { method: "DELETE" }),
   compare: (options: { name: string; items: { product_id: string; mode?: "add" | "replace" | null }[] }[]) =>
     call<CompareResult>("/api/compare", json("POST", { options })),

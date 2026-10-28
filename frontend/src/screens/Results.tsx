@@ -15,6 +15,8 @@ export default function Results({ id }: { id: string }) {
   const [ev, setEv] = useState<Evidence | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [tab, setTab] = useState<TabId>("overview");
+  // Plain-language wording that passed the claim validator; until then (or if off) the engine's own sentence.
+  const [explained, setExplained] = useState<string | null>(null);
 
   const load = useCallback(() => {
     api.evidence(id).then(
@@ -23,6 +25,11 @@ export default function Results({ id }: { id: string }) {
         setErr(null);
       },
       (e) => setErr((e as Error).message)
+    );
+    setExplained(null);
+    api.explanation(id).then(
+      (x) => setExplained(x.source === "llm" ? x.text : null),
+      () => setExplained(null)
     );
   }, [id]);
   useEffect(load, [load]);
@@ -83,7 +90,7 @@ export default function Results({ id }: { id: string }) {
               <h2 className="h2">What stands out</h2>
               {prepared && <PreparedTag />}
             </div>
-            <p className="standout__text">{report.message}</p>
+            <p className="standout__text">{explained ?? report.message}</p>
             <p className="standout__next">{v.next}</p>
           </section>
 

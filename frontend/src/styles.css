@@ -2339,6 +2339,18 @@ button,
   background: transparent;
   box-shadow: inset 0 0 0 1.5px #6c5320;
 }
+/* No ingredient exclusions recorded: neutral grey, never the sage "passed" dot. */
+.status--nothing_to_check {
+  color: var(--ink-3);
+}
+.status--nothing_to_check::before {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--ink-3);
+}
+.excl__item .tag--unknown {
+  margin-left: 0;
+  justify-self: start;
+}
 .excl {
   display: grid;
   gap: 8px;
@@ -2495,4 +2507,33 @@ button,
   font-size: 12.5px;
   line-height: 1.35;
   text-align: center;
+}
+
+/* free-text intake proposals */
+.proposal {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: var(--r);
+  background: var(--raised);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+.proposal__quote {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ink-2);
+  font-style: italic;
+}
+.needs {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  background: #efe6d3;
+  color: #6c5320;
 }

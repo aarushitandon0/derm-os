@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { api, ApiError, CONCERNS, type Column, type CompareResult, type Product } from "../api";
-import { CHECK, concernLabel, inr, ROLE_LABEL } from "../copy";
-import { Btn, Loading, Notice, PageHead, TopBar } from "../components/ui";
+import { CHECK, concernLabel, INCOMPLETE_TAG, inr, ROLE_LABEL } from "../copy";
+import { Btn, IncompleteTag, Loading, Notice, PageHead, TopBar } from "../components/ui";
 import { go } from "../router";
 import { useStore } from "../store";
 
@@ -125,7 +125,42 @@ export default function Compare({ initial }: { initial?: { a?: string | null; b?
 
           <Row label="Exclusion check" cols={cols} render={(c) => <ExclusionCell c={c} />} />
           <Row label="What changes" cols={cols} render={(c) => <ChangeCell c={c} catalog={catalog} />} />
-          <Row label="New spend" cols={cols} render={(c) => <span className="num">{inr(c.new_spend_inr)}</span>} />
+          <Row
+            label="New spend"
+            cols={cols}
+            render={(c) => (
+              <span>
+                <span className="num">{inr(c.new_spend_inr)}</span>
+                {c.name !== "Change nothing" && <span className="cell-note">You buy it whether it adds or replaces.</span>}
+              </span>
+            )}
+          />
+          <Row
+            label="Steps after"
+            cols={cols}
+            render={(c) => {
+              const d = c.step_count - cols[0].step_count;
+              return (
+                <span>
+                  <span className="num">{c.step_count}</span>
+                  {c.name !== "Change nothing" && (
+                    <span className="cell-note">{d === 0 ? "Same number as now" : d > 0 ? `${d} more than now` : `${-d} fewer than now`}</span>
+                  )}
+                </span>
+              );
+            }}
+          />
+          <Row
+            label="You stop using"
+            cols={cols}
+            render={(c) =>
+              c.stopped.length ? (
+                <span>{c.stopped.map((s) => catalog[s]?.name ?? s).join(", ")}</span>
+              ) : (
+                <span className="muted">Nothing</span>
+              )
+            }
+          />
           <Row
             label="New leave-on products"
             cols={cols}
@@ -217,6 +252,7 @@ function ExclusionCell({ c }: { c: Column }) {
       {c.checks.map((k) => (
         <div key={k.product_id} className={`excl__item excl--${k.status}`}>
           <span className={`status status--${k.status}`}>{CHECK[k.status].label}</span>
+          {k.tags?.includes(INCOMPLETE_TAG) && <IncompleteTag />}
           {k.status === "blocked" ? (
             k.matches.map((m, i) =>
               m.label_line ? (

@@ -450,6 +450,8 @@ function conditionRows(shot: Shot): Row[] {
       const miss = (c.failed ?? []).filter((x) => x.field === f);
       if (miss.length)
         return { field: f, state: "fail", sub: miss.map((m) => m.reason).join(" "), fix: [...new Set(miss.map((m) => m.fix))].join(" ") };
+      const skipped = (c.not_compared ?? []).find((x) => x.field === f);
+      if (skipped) return { field: f, state: "neutral", sub: `${CONDITION_STATE.notCompared}: ${skipped.reason}` };
       if (c.checked?.includes(f)) return { field: f, state: "pass", sub: CONDITION_STATE.match };
       return { field: f, state: "neutral", sub: CONDITION_STATE.notRecorded };
     }

@@ -24,7 +24,8 @@ export function ComparabilityBadge({ c, retakeTo }: { c: Comparability | null; r
   if (c.comparable) {
     // Name only what was actually compared; fields with no data on both sides are listed apart.
     const checked = c.checked ? CONDITION_ROWS.filter((f) => c.checked!.includes(f)) : null;
-    const missing = checked ? CONDITION_ROWS.filter((f) => !checked.includes(f)) : [];
+    const skipped = (c.not_compared ?? []).map((x) => x.field);
+    const missing = checked ? CONDITION_ROWS.filter((f) => !checked.includes(f) && !skipped.includes(f)) : [];
     const names = (fs: typeof CONDITION_ROWS) => fs.map((f) => CONDITION[f].label.toLowerCase());
     return (
       <div className="compbadge compbadge--ok">
@@ -35,6 +36,11 @@ export function ComparabilityBadge({ c, retakeTo }: { c: Comparability | null; r
             : "Matches your baseline within tolerance."}
         </span>
         {missing.length > 0 && <span className="small muted">Not recorded, so not compared: {list(names(missing))}.</span>}
+        {(c.not_compared ?? []).map((x) => (
+          <span key={x.field} className="small muted">
+            {CONDITION[x.field].label}: not compared. {x.reason}
+          </span>
+        ))}
       </div>
     );
   }

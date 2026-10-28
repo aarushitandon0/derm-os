@@ -28,6 +28,8 @@ from typing import Callable
 
 from PIL import Image, ImageOps
 
+from . import photometa  # noqa: F401  (registers the HEIC decoder before any photo is opened)
+
 NORMALISE_VERSION = "norm-1.0"
 FACE_FRAC = 0.75                                  # face width / crop width
 OUTPUT = {"sd": (480, 640), "hd": (1080, 1440)}   # width x height after scaling (3:4)
@@ -147,7 +149,7 @@ class Normalised:
 
     def png_bytes(self) -> bytes:
         b = io.BytesIO()
-        self.image.save(b, format="PNG")   # lossless: no extra compression on top of the crop
+        photometa.clean_copy(self.image).save(b, format="PNG")   # no metadata; lossless: no extra compression on top of the crop
         return b.getvalue()
 
 
@@ -185,6 +187,7 @@ def normalise(img: Image.Image, faces: list[Box], requested: str = "sd", locked:
     p = plan(w, h, face, mode)
     # One call does the crop and the downscale (scale <= 1 is guaranteed by plan()).
     out = img.resize(p.output, Image.Resampling.LANCZOS, box=p.crop)
+    out.info = {}   # pixels only: the original's EXIF (GPS included) never reaches the crop
     info = {
         "version": NORMALISE_VERSION,
         "mode": mode,

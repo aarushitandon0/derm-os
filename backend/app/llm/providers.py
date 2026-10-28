@@ -1,4 +1,5 @@
-"""One adapter interface, chosen by LLM_PROVIDER = none | anthropic | openai_compatible.
+"""One adapter interface, chosen by LLM_PROVIDER = none | ollama (the documented setup: local, no
+key) | anthropic | openai_compatible (kept for anyone who has a key; not documented or deployed).
 
 The LLM never decides anything. It only turns free text into proposed records the user
 confirms, and words results a validator checks. Every failure (no key, timeout, HTTP
@@ -17,6 +18,9 @@ import httpx
 log = logging.getLogger("dermos.llm")
 
 DEFAULT_ANTHROPIC_MODEL = "claude-haiku-5-5"
+DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434/v1"
+DEFAULT_OLLAMA_MODEL = "gemma4:e4b"
+DEFAULT_OLLAMA_TIMEOUT = 120.0
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 
 
@@ -63,7 +67,10 @@ class OpenAICompatibleProvider:
     """Groq, Gemini's OpenAI endpoint, local Ollama (http://127.0.0.1:11434/v1) and similar."""
     name = "openai_compatible"
 
-    def __init__(self, base_url: str, model: str, api_key: str | None = None, http: httpx.Client | None = None):
+    def __init__(self, base_url: str, model: str, api_key: str | None = None, http: httpx.Client | None = None,
+                 name: str = "openai_compatible", timeout: float | None = None):
+        self.name = name
+        self.timeout = timeout   # None: LLM_TIMEOUT (default 12 s)
         self.base_url = base_url.rstrip("/")
         self.model = model
         self._key = api_key
@@ -78,19 +85,20 @@ class OpenAICompatibleProvider:
         headers = {"content-type": "application/json"}
         if self._key:
             headers["authorization"] = f"Bearer {self._key}"
-        data = _post(self._http, f"{self.base_url}/chat/completions", body, headers)
+        data = _post(self._http, f"{self.base_url}/chat/completions", body, headers, self.timeout)
         try:
             return data["choices"][0]["message"]["content"] or ""
         except (KeyError, IndexError, TypeError) as e:
             raise LLMError("unexpected response shape") from e
 
 
-def _post(http: httpx.Client | None, url: str, body: dict, headers: dict) -> dict:
+def _post(http: httpx.Client | None, url: str, body: dict, headers: dict, timeout: float | None = None) -> dict:
+    t = timeout or _timeout()
     try:
         if http is not None:
-            r = http.post(url, json=body, headers=headers, timeout=_timeout())
+            r = http.post(url, json=body, headers=headers, timeout=t)
         else:
-            with httpx.Client(timeout=_timeout()) as c:
+            with httpx.Client(timeout=t) as c:
                 r = c.post(url, json=body, headers=headers)
     except httpx.HTTPError as e:
         raise LLMError(type(e).__name__) from None
@@ -109,6 +117,14 @@ def get_provider() -> Provider | None:
     if kind in ("", "none", "off", "0"):
         return None
     model = os.environ.get("LLM_MODEL", "").strip()
+    if kind == "ollama":
+        # The supported setup: a local Ollama server, no API key. Ollama serves the OpenAI-style
+        # chat endpoint at /v1. If it isn't running, every call fails and templates are shown.
+        base = os.environ.get("LLM_BASE_URL", "").strip() or DEFAULT_OLLAMA_URL
+        # A local model on a laptop CPU took about 50 s per call warm (2 min cold) in our check, so
+        # Ollama gets a longer default; LLM_TIMEOUT still overrides it.
+        timeout = None if os.environ.get("LLM_TIMEOUT") else DEFAULT_OLLAMA_TIMEOUT
+        return OpenAICompatibleProvider(base, model or DEFAULT_OLLAMA_MODEL, None, name="ollama", timeout=timeout)
     if kind == "anthropic":
         key = (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("LLM_API_KEY") or "").strip()
         if not key:

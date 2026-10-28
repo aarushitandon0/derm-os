@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Literal
 
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,6 +29,7 @@ from . import decision as D
 from . import demo
 from . import evidence as E
 from . import guard as G
+from . import photometa as P
 from . import facecrop as F
 from . import llm as L
 from . import scenes as S
@@ -74,6 +76,8 @@ app = FastAPI(title="derm//os", version="0.1.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=G.cors_origins(),
                    allow_methods=["*"], allow_headers=["*"])
 SCAN_LIMITER = G.make_scan_limiter()
+# Upload prechecks are free (no YouCam call) but run the face detector, so they get their own limit.
+PRECHECK_LIMITER = G.make_scan_limiter()
 # Locally saved YouCam masks (the original URLs expire).
 app.mount("/media", StaticFiles(directory=MEDIA_DIR), name="media")
 
@@ -325,6 +329,171 @@ def _media_url(path: Path) -> str:
     return "/media/" + path.relative_to(MEDIA_DIR).as_posix()
 
 
+def _parse_actions(actions: str) -> tuple[list[str], str]:
+    acts = [a.strip() for a in actions.split(",") if a.strip()]
+    try:
+        return acts, validate_actions(acts)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+
+@dataclass
+class Prepared:
+    """One photo after the free checks: cropped, measured, ready to scan. Its two temp files
+    (the original and the crop) are deleted by cleanup(); nothing of the photo is kept."""
+    norm: F.Normalised
+    fp: Fingerprint
+    meta: P.ExifMeta
+    pixels: str                 # hash of the decoded pixels, for the duplicate-baseline check
+    warning: str | None
+    orig_path: str
+    norm_path: str
+
+    def cleanup(self) -> None:
+        for p in (self.orig_path, self.norm_path):
+            if p and os.path.exists(p):
+                os.unlink(p)
+
+
+def _prepare(raw: bytes, requested: str, locked: str | None, capture_source: str,
+             yaw: float | None = None, pitch: float | None = None, roll: float | None = None,
+             client_hour: int | None = None, client_device: str | None = None,
+             face_ratio: float | None = None) -> Prepared:
+    """The same free checks for camera and uploaded photos, with no YouCam call: file type and
+    size, decode upright (EXIF orientation), one face, the crop and scale of app/facecrop.py, and
+    the light fingerprint. Raises P.UploadRefused, F.Refusal or F.DetectorUnavailable.
+
+    `client_hour` / `client_device` are only for live camera shots (which carry no EXIF); uploads
+    never send them, so an upload's hour and camera come from its own EXIF or are "not recorded"."""
+    P.check_file(raw)
+    img, notes = F.open_upright(raw)
+    pixels = P.pixel_hash(img)
+    norm = F.normalise(img, F.get_detector()(img), requested, locked, notes)
+    with tempfile.NamedTemporaryFile(suffix=".img", delete=False) as tmp:
+        tmp.write(raw)
+        orig_path = tmp.name
+    norm_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp2:
+            tmp2.write(norm.png_bytes())
+            norm_path = tmp2.name
+        # The fingerprint always comes from the real pixels, demo or not: light from the
+        # normalised image (what YouCam analyses), camera and time from the original's EXIF.
+        fp = measure_normalised(norm_path, orig_path, norm.info, yaw, pitch, roll, client_hour, client_device,
+                                face_ratio_live=face_ratio)
+    except Exception:
+        for p in (orig_path, norm_path):
+            if p and os.path.exists(p):
+                os.unlink(p)
+        raise
+    fp.capture_source = capture_source
+    warning = P.MSG["palette"] if norm.info.get("reduced_colour") else None
+    return Prepared(norm, fp, P.read_meta(raw), pixels, warning, orig_path, norm_path)
+
+
+def _refusal(e: Exception) -> HTTPException:
+    """One plain fix for any photo the free checks refuse."""
+    if isinstance(e, (F.Refusal, P.UploadRefused)):
+        return HTTPException(422, {"code": e.code, "message": e.fix})
+    log.warning("Face detector unavailable; photo refused.")
+    return HTTPException(503, "The face check isn't available on this server right now, so the photo "
+                              "can't be prepared for analysis. Try again in a minute.")
+
+
+def _gate(trial_id: str | None, prep: Prepared, mode: str, acts: list[str]) -> dict | None:
+    """The comparability gate against the trial's baseline, exactly as a stored check-in is gated
+    (E.compare_conditions on the fingerprints). None when there is no baseline to compare with."""
+    if not trial_id:
+        return None
+    base = [_to_capture(c) for c in all_("captures") if c.get("trial_id") == trial_id and c["phase"] == "baseline"]
+    if not base:
+        return None
+    return E.compare_conditions(base, [E.Capture({}, prep.fp, mode, tuple(acts))]).to_dict()
+
+
+def _scan_prepared(prep: Prepared, acts: list[str], want: str, replay_reason: str | None, *,
+                   trial_id: str | None, phase: str, persona: str, fixture_set: str | None,
+                   place: str | None, extra: dict | None = None) -> dict:
+    """Scan one prepared photo: live through YouCam (after the balance floor and the judge caps)
+    or a replay of prepared data. Stores the capture; never the photo."""
+    youcam, notice, hold, replay_info = None, None, None, None
+    source = "live"
+    mode, acts = prep.norm.mode, actions_for_mode(acts, prep.norm.mode)
+    fp = prep.fp
+    need = 1080 if mode == "hd" else 480
+    if fp.short_side < need:   # can't happen after normalisation; kept as a last check
+        raise HTTPException(422, f"Photo short side is {fp.short_side}px; {mode.upper()} needs {need}px.")
+    client = cost = bal = None
+    if want == "live":
+        try:
+            client = YouCamClient()
+        except YouCamError as e:
+            raise HTTPException(503, e.friendly)
+        cost = _scan_cost(client, acts) or scan_cost_from({}, client.version if hasattr(client, "version")
+                                                          else "v2.1", acts)[0]
+        # The real cap: the YouCam balance itself, read (free) before every live scan. It survives
+        # restarts, unlike the database counters below. Unreadable balance = nothing is sent.
+        bal, floored = G.balance_floor(client, cost)
+        if floored:
+            want, replay_reason, notice = "replay", floored, G.floor_message(floored)
+            log.info("Live scan replayed instead: %s.", floored)
+        else:
+            # Second limit: the judge caps counted in this server's database.
+            hold, capped = hold_units(cost)
+            if capped:
+                want, replay_reason, notice = "replay", capped, G.cap_message(capped)
+                log.info("Live scan replayed instead: %s.", capped)
+    if want == "replay":
+        fset = fixture_set or ("baseline" if phase == "free" else phase)
+        prior = [c for c in all_("captures") if c.get("source") == "replay"
+                 and c.get("trial_id") == trial_id and (c.get("replay") or {}).get("set") == fset]
+        try:
+            rp = demo.pick(persona, fset, len(prior))
+        except demo.FixtureError as e:
+            raise HTTPException(503, str(e))
+        res, source = rp.result, "replay"
+        mode, acts = res.mode, list(res.actions)
+        replay_info = {"persona": rp.persona, "set": rp.set, "fixture": rp.path.name,
+                       "synthetic": rp.synthetic, "reason": replay_reason}
+        cap_id = uuid.uuid4().hex[:12]
+        masks = demo.copy_masks(rp, MEDIA_DIR / cap_id)
+    else:
+        cap_id = uuid.uuid4().hex[:12]
+        try:
+            check_unit_reserve(client, unit_reserve(), cost, balance=bal)
+            log.info("YouCam scan: %s %s concerns, cost %s units; balance %s (reserve %s, floor %s).",
+                     len(acts), mode.upper(), cost, bal, unit_reserve(), G.min_balance())
+            res = client.analyze(prep.norm_path, acts)
+        except YouCamError as e:
+            settle_units(hold, spent=False)
+            if e.code == "unit_reserve":
+                raise HTTPException(402, e.friendly)
+            raise HTTPException(502 if e.code not in (None, "no_key") else 503, e.friendly)
+        except Exception:
+            settle_units(hold, spent=False)
+            raise
+        settle_units(hold, spent=True)
+        masks = download_masks(res, MEDIA_DIR / cap_id, getattr(client, "upload_http", None))
+        # Masks are saved locally, so the copy at YouCam (photo + outputs) is no longer needed.
+        youcam = {"task_id": res.task_id, "deleted": delete_task_quietly(client, res.task_id),
+                  "cost_units": cost}
+
+    cap = put("captures", {"trial_id": trial_id, "phase": phase, "mode": mode, "actions": acts, "place": place,
+                           "fingerprint": fp.to_dict(), "raw_scores": res.raw_scores(),
+                           # Stored without mask URLs: they are signed links to images of a face.
+                           "result": strip_urls(res.to_dict()), "source": source, "replay": replay_info,
+                           "youcam": youcam,
+                           "masks": {k: [_media_url(p) for p in v] for k, v in masks.items()},
+                           "taken_at": datetime.now(timezone.utc).isoformat(), **(extra or {})}, id=cap_id)
+    # Immediate feedback: is this capture comparable to the trial baseline?
+    check = None
+    if trial_id and phase == "checkin":
+        base = [_to_capture(c) for c in all_("captures") if c.get("trial_id") == trial_id and c["phase"] == "baseline"]
+        if base:
+            check = E.compare_conditions(base, [_to_capture(cap)]).to_dict()
+    return {"capture": cap, "comparability": check, "notice": notice}
+
+
 @app.post("/api/scan")
 async def scan(request: Request,
                image: UploadFile = File(...),
@@ -342,108 +511,138 @@ async def scan(request: Request,
                # check-in can say "Your first photos: by a window, around 9 am". Never inferred.
                place: Literal["window", "ceiling", "lamp", "outdoors", "other"] | None = Form(None),
                x_live_passcode: str | None = Header(None)):
+    """One live camera shot."""
     SCAN_LIMITER.check(G.client_ip(request))
     # Live only with DEMO_MODE=0 AND the right passcode; otherwise replay recorded fixtures.
     want, replay_reason = G.scan_source(x_live_passcode)
-    acts = [a.strip() for a in actions.split(",") if a.strip()]
+    acts, requested = _parse_actions(actions)
+    raw = await image.read()
+    # Every capture is cropped and scaled the same way (app/facecrop.py) before it is measured
+    # or sent, so distance from the camera doesn't change the comparison. One mode per trial.
     try:
-        requested = validate_actions(acts)
-    except ValueError as e:
-        raise HTTPException(422, str(e))
-    cap_id = uuid.uuid4().hex[:12]
-    suffix = Path(image.filename or "x.jpg").suffix or ".jpg"
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-        tmp.write(await image.read())
-        path = tmp.name
-    norm_path = None
-    source, replay_info, youcam, notice, hold = "live", None, None, None, None
+        prep = _prepare(raw, requested, _trial_mode(trial_id), "camera", yaw, pitch, roll,
+                        client_hour, client_device, face_ratio)
+    except (F.Refusal, P.UploadRefused, F.DetectorUnavailable) as e:
+        raise _refusal(e)
     try:
-        # Every capture is cropped and scaled the same way (app/facecrop.py) before it is measured
-        # or sent, so distance from the camera doesn't change the comparison. One mode per trial.
-        try:
-            norm = F.normalise_file(path, requested=requested, locked=_trial_mode(trial_id))
-        except F.Refusal as e:
-            raise HTTPException(422, {"code": e.code, "message": e.fix})
-        except F.DetectorUnavailable:
-            log.warning("Face detector unavailable; scan refused.")
-            raise HTTPException(503, "The face check isn't available on this server right now, so the photo "
-                                     "can't be prepared for analysis. Try again in a minute.")
-        mode, acts = norm.mode, actions_for_mode(acts, norm.mode)
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp2:
-            tmp2.write(norm.png_bytes())
-            norm_path = tmp2.name
-        # The fingerprint always comes from the real uploaded pixels, demo or not: light from the
-        # normalised image (what YouCam analyses), camera and time from the original's EXIF.
-        fp = measure_normalised(norm_path, path, norm.info, yaw, pitch, roll, client_hour, client_device,
-                                face_ratio_live=face_ratio)
-        need = 1080 if mode == "hd" else 480
-        if fp.short_side < need:   # can't happen after normalisation; kept as a last check
-            raise HTTPException(422, f"Photo short side is {fp.short_side}px; {mode.upper()} needs {need}px.")
-        client = cost = None
-        if want == "live":
-            try:
-                client = YouCamClient()
-            except YouCamError as e:
-                raise HTTPException(503, e.friendly)
-            cost = _scan_cost(client, acts) or scan_cost_from({}, client.version if hasattr(client, "version")
-                                                              else "v2.1", acts)[0]
-            # Judge caps: a live scan that would go over them replays prepared data instead.
-            hold, capped = hold_units(cost)
-            if capped:
-                want, replay_reason, notice = "replay", capped, G.cap_message(capped)
-                log.info("Live scan replayed instead: %s.", capped)
-        if want == "replay":
-            fset = fixture_set or ("baseline" if phase == "free" else phase)
-            prior = [c for c in all_("captures") if c.get("source") == "replay"
-                     and c.get("trial_id") == trial_id and (c.get("replay") or {}).get("set") == fset]
-            try:
-                rp = demo.pick(persona, fset, len(prior))
-            except demo.FixtureError as e:
-                raise HTTPException(503, str(e))
-            res, source = rp.result, "replay"
-            mode, acts = res.mode, list(res.actions)
-            replay_info = {"persona": rp.persona, "set": rp.set, "fixture": rp.path.name,
-                           "synthetic": rp.synthetic, "reason": replay_reason}
-            masks = demo.copy_masks(rp, MEDIA_DIR / cap_id)
-        else:
-            try:
-                bal = check_unit_reserve(client, unit_reserve(), cost)
-                log.info("YouCam scan: %s %s concerns, cost %s units; balance %s (reserve %s).",
-                         len(acts), mode.upper(), cost, bal, unit_reserve())
-                res = client.analyze(norm_path, acts)
-            except YouCamError as e:
-                settle_units(hold, spent=False)
-                if e.code == "unit_reserve":
-                    raise HTTPException(402, e.friendly)
-                raise HTTPException(502 if e.code not in (None, "no_key") else 503, e.friendly)
-            except Exception:
-                settle_units(hold, spent=False)
-                raise
-            settle_units(hold, spent=True)
-            masks = download_masks(res, MEDIA_DIR / cap_id, getattr(client, "upload_http", None))
-            # Masks are saved locally, so the copy at YouCam (photo + outputs) is no longer needed.
-            youcam = {"task_id": res.task_id, "deleted": delete_task_quietly(client, res.task_id),
-                      "cost_units": cost}
+        return _scan_prepared(prep, acts, want, replay_reason, trial_id=trial_id, phase=phase,
+                              persona=persona, fixture_set=fixture_set, place=place)
     finally:
-        os.unlink(path)
-        if norm_path:
-            os.unlink(norm_path)
+        prep.cleanup()
 
-    cap = put("captures", {"trial_id": trial_id, "phase": phase, "mode": mode, "actions": acts, "place": place,
-                           "fingerprint": fp.to_dict(), "raw_scores": res.raw_scores(),
-                           # Stored without mask URLs: they are signed links to images of a face.
-                           "result": strip_urls(res.to_dict()), "source": source, "replay": replay_info,
-                           "youcam": youcam,
-                           "masks": {k: [_media_url(p) for p in v] for k, v in masks.items()},
-                           "taken_at": datetime.now(timezone.utc).isoformat()}, id=cap_id)
-    # Immediate feedback: is this capture comparable to the trial baseline?
-    check = None
-    if trial_id and phase == "checkin":
-        base = [_to_capture(c) for c in all_("captures") if c.get("trial_id") == trial_id and c["phase"] == "baseline"]
-        if base:
-            comp = E.compare_conditions(base, [_to_capture(cap)])
-            check = comp.to_dict()
-    return {"capture": cap, "comparability": check, "notice": notice}
+
+# ---------------------------------------------------------------- uploaded photos
+UPLOAD_FIELDS = "images"
+
+
+async def _read_uploads(images: list[UploadFile]) -> list[bytes]:
+    out = []
+    for f in images:
+        # Read at most one byte over the limit, so a huge file is refused without loading it all.
+        data = await f.read(P.MAX_UPLOAD_BYTES + 1)
+        out.append(data)
+    return out
+
+
+def _precheck(raws: list[bytes], phase: str, trial_id: str | None, requested: str, acts: list[str],
+              same_sitting: bool | None) -> tuple[dict, list[Prepared]]:
+    """The free checks for a set of uploaded photos. Returns (result, prepared photos); the caller
+    must clean up the prepared photos. result["ok"] is True only when every check passed."""
+    need = P.UPLOAD_COUNT[phase]
+    result = {"ok": False, "code": None, "message": None, "needs_confirmation": False, "timing": None,
+              "photos": [], "comparability": None}
+
+    def fail(code: str, message: str, ask: bool = False):
+        result.update(code=code, message=message, needs_confirmation=ask)
+        return result
+
+    if len(raws) != need:
+        what = "Your first photos need" if phase == "baseline" else "A check-in needs"
+        return fail("count", f"{what} exactly {need} photos. You chose {len(raws)}."), []
+    prepared: list[Prepared] = []
+    locked = _trial_mode(trial_id)
+    try:
+        for i, raw in enumerate(raws, 1):
+            try:
+                p = _prepare(raw, requested, locked, "upload")
+            except (F.Refusal, P.UploadRefused) as e:
+                result["photos"].append({"index": i, "ok": False, "code": e.code, "message": e.fix})
+                return fail(e.code, f"Photo {i}: {e.fix}"), prepared
+            prepared.append(p)
+            # A trial keeps one scan mode: the first photo's mode locks the rest of this set.
+            locked = locked or p.norm.mode
+            result["photos"].append({"index": i, "ok": True, "warning": p.warning,
+                                     "hour": p.fp.captured_hour, "device": p.fp.device or "not recorded",
+                                     "luminance": p.fp.luminance, "red_blue_ratio": p.fp.red_blue_ratio,
+                                     "mode": p.norm.mode})
+        if phase == "baseline":
+            integ = P.baseline_integrity([p.pixels for p in prepared], [p.meta.taken_at for p in prepared],
+                                         same_sitting)
+            result["timing"] = integ["timing"]
+            if not integ["ok"]:
+                return fail(integ["code"], integ["message"], integ["needs_confirmation"]), prepared
+        else:
+            checks = [_gate(trial_id, p, p.norm.mode, actions_for_mode(acts, p.norm.mode)) for p in prepared]
+            result["comparability"] = checks
+            for i, chk in enumerate(checks, 1):
+                if chk and not chk["comparable"]:
+                    fix = (chk["fixes"] or ["Retake in the same conditions as your first photos."])[0]
+                    return fail("not_comparable", f"Photo {i} doesn't match your first photos. {fix}"), prepared
+    except F.DetectorUnavailable as e:
+        for p in prepared:
+            p.cleanup()
+        raise _refusal(e)
+    result["ok"] = True
+    return result, prepared
+
+
+@app.post("/api/upload/precheck")
+async def upload_precheck(request: Request,
+                          images: list[UploadFile] = File(...),
+                          phase: Literal["baseline", "checkin"] = Form(...),
+                          trial_id: str | None = Form(None),
+                          actions: str = Form(",".join(DEFAULT_ACTIONS)),
+                          same_sitting: bool | None = Form(None)):
+    """Free checks on uploaded photos before any scan: zero YouCam calls, nothing stored.
+    Returns pass, or one plain-language fix."""
+    PRECHECK_LIMITER.check(G.client_ip(request))
+    acts, requested = _parse_actions(actions)
+    result, prepared = _precheck(await _read_uploads(images), phase, trial_id, requested, acts, same_sitting)
+    for p in prepared:
+        p.cleanup()
+    return result
+
+
+@app.post("/api/upload/scan")
+async def upload_scan(request: Request,
+                      images: list[UploadFile] = File(...),
+                      phase: Literal["baseline", "checkin"] = Form(...),
+                      trial_id: str | None = Form(None),
+                      actions: str = Form(",".join(DEFAULT_ACTIONS)),
+                      same_sitting: bool | None = Form(None),
+                      persona: str = Form("riya"), fixture_set: str | None = Form(None),
+                      place: Literal["window", "ceiling", "lamp", "outdoors", "other"] | None = Form(None),
+                      x_live_passcode: str | None = Header(None)):
+    """Scan uploaded photos (3 for the first photos, 2 for a check-in). Re-runs every precheck on
+    the server first and never trusts the client's own precheck."""
+    ip = G.client_ip(request)
+    want, replay_reason = G.scan_source(x_live_passcode)
+    acts, requested = _parse_actions(actions)
+    result, prepared = _precheck(await _read_uploads(images), phase, trial_id, requested, acts, same_sitting)
+    try:
+        if not result["ok"]:
+            raise HTTPException(422, {"code": result["code"], "message": result["message"],
+                                      "needs_confirmation": result["needs_confirmation"]})
+        for _ in prepared:
+            SCAN_LIMITER.check(ip)
+        extra = {"baseline_timing": result["timing"]} if phase == "baseline" else {}
+        out = [_scan_prepared(p, acts, want, replay_reason, trial_id=trial_id, phase=phase, persona=persona,
+                              fixture_set=fixture_set, place=place, extra=extra) for p in prepared]
+    finally:
+        for p in prepared:
+            p.cleanup()
+    return {"captures": [o["capture"] for o in out], "comparability": [o["comparability"] for o in out],
+            "notice": next((o["notice"] for o in out if o["notice"]), None)}
 
 
 def _youcam_task_id(c: dict) -> str | None:
@@ -645,7 +844,8 @@ def resolve_reaction(tid: str, rid: str, body: ResolveIn):
 
 
 def _slim(c: dict) -> dict:
-    keys = ("id", "phase", "taken_at", "source", "replay", "masks", "fingerprint", "raw_scores", "mode", "place")
+    keys = ("id", "phase", "taken_at", "source", "replay", "masks", "fingerprint", "raw_scores", "mode", "place",
+            "baseline_timing")
     return {k: c.get(k) for k in keys}
 
 

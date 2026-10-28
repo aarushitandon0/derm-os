@@ -10,6 +10,7 @@ os.environ.pop("SCAN_RATE_LIMIT", None)
 os.environ.pop("TRUST_PROXY", None)
 os.environ.pop("DERMOS_SEED", None)
 # The optional LLM layer is off in tests unless a test sets it up with a fake provider.
+os.environ.pop("LIVE_SCAN_MIN_BALANCE", None)
 for _k in ("LLM_PROVIDER", "LLM_BASE_URL", "LLM_MODEL", "LLM_API_KEY", "ANTHROPIC_API_KEY"):
     os.environ.pop(_k, None)
 

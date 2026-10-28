@@ -93,6 +93,52 @@ def cap_message(reason: str) -> str:
             "instead. Nothing was sent to YouCam.")
 
 
+# ---------------------------------------------------------------- balance floor (the real cap)
+# The database counters above reset whenever the server restarts. The YouCam balance doesn't, so
+# before every live scan the server reads it (a free call) and refuses to send a scan that would
+# leave less than LIVE_SCAN_MIN_BALANCE. Set it at deploy time to "balance now minus the units
+# judges may use". Unset, it falls back to YOUCAM_UNIT_RESERVE (default 200). A value that isn't
+# a number blocks every live scan, and so does a balance that can't be read.
+DEFAULT_RESERVE = 200.0
+
+
+def min_balance() -> float:
+    raw = os.environ.get("LIVE_SCAN_MIN_BALANCE")
+    if raw is None or not raw.strip():
+        raw = os.environ.get("YOUCAM_UNIT_RESERVE", str(DEFAULT_RESERVE))
+        try:
+            return float(raw)
+        except ValueError:
+            return DEFAULT_RESERVE
+    try:
+        v = float(raw)
+    except ValueError:
+        return float("inf")
+    return v if v >= 0 else float("inf")
+
+
+def balance_floor(client, cost: float) -> tuple[float | None, str | None]:
+    """(balance, None) when a live scan of `cost` units may be sent, else (balance or None, reason).
+    Reasons: 'balance_unreadable' (any failure reading it) or 'balance_floor'."""
+    try:
+        bal = client.unit_balance()
+    except Exception:  # noqa: BLE001 - an unreadable balance never lets a scan through
+        return None, "balance_unreadable"
+    if bal is None:
+        return None, "balance_unreadable"
+    if bal - cost < min_balance():
+        return bal, "balance_floor"
+    return bal, None
+
+
+def floor_message(reason: str) -> str:
+    if reason == "balance_unreadable":
+        return ("The YouCam unit balance couldn't be checked, so this scan used prepared demo data instead. "
+                "Nothing was sent to YouCam.")
+    return ("Live scans for this demo have used the YouCam units set aside for them, so this scan used "
+            "prepared demo data instead. Nothing was sent to YouCam.")
+
+
 # ---------------------------------------------------------------- rate limit
 def _parse_limit(raw: str | None) -> tuple[int, float] | None:
     raw = (raw or "30/600").strip()

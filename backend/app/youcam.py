@@ -27,6 +27,8 @@ from typing import Any
 
 import httpx
 
+from . import photometa
+
 log = logging.getLogger("dermos.youcam")
 
 BASE_URL = os.environ.get("YOUCAM_BASE_URL", "https://yce-api-01.makeupar.com")
@@ -425,13 +427,17 @@ class UnitReserveError(YouCamError):
     pass
 
 
-def check_unit_reserve(client: Any, reserve: float, cost: float | None = None) -> float | None:
+def check_unit_reserve(client: Any, reserve: float, cost: float | None = None,
+                       balance: float | None = None) -> float | None:
     """Refuse a live scan when the balance can't pay for it (`cost`, the exact price of this
     scan) or when paying would leave less than `reserve`. If the balance can't be read
     (network error, unknown shape), log it and allow the scan: the guard must never be the
-    reason a demo breaks, and YouCam itself refuses a scan the account can't pay for."""
+    reason a demo breaks, and YouCam itself refuses a scan the account can't pay for.
+    `balance`: a balance already read for this scan (by the floor check), so it isn't read twice.
+    In the app the floor check (guard.balance_floor) runs first and never lets an unreadable
+    balance through; this allow-on-failure only matters for scripts that call it directly."""
     try:
-        bal = client.unit_balance()
+        bal = balance if balance is not None else client.unit_balance()
     except Exception as e:  # noqa: BLE001 - any failure here is non-fatal by design
         log.warning("Unit balance check failed (%s); continuing without the guard.", type(e).__name__)
         return None
@@ -479,9 +485,14 @@ def download_masks(result: SkinResult, dest_dir: str | Path,
                     if r.status_code != 200 or ext not in _MASK_TYPES.values() or len(r.content) > MAX_MASK_BYTES:
                         log.warning("Mask %s #%d not saved (status %s, type %s).", concern, i, r.status_code, ctype)
                         continue
+                    # Stored re-encoded from its pixels alone, so no metadata is kept.
+                    clean = photometa.clean_bytes(r.content)
+                    if clean is None:
+                        log.warning("Mask %s #%d not saved (not a readable image).", concern, i)
+                        continue
                     dest.mkdir(parents=True, exist_ok=True)
-                    out = dest / f"{concern}_{i}{ext}"
-                    out.write_bytes(r.content)
+                    out = dest / f"{concern}_{i}{clean[1]}"
+                    out.write_bytes(clean[0])
                     saved.setdefault(concern, []).append(out)
                 except httpx.HTTPError as e:
                     log.warning("Mask %s #%d download failed (%s).", concern, i, type(e).__name__)

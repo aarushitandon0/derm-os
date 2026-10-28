@@ -24,7 +24,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 
-from PIL import ExifTags, Image, ImageOps, ImageStat
+from PIL import Image, ImageOps, ImageStat
 
 
 @dataclass
@@ -49,6 +49,8 @@ class Fingerprint:
     original_height: int | None = None
     face_ratio_live: float | None = None     # the browser's own live estimate, for reference only
     normalisation: dict | None = None        # method, target, crop box, scale (facecrop.normalise info)
+    # "camera" | "upload": shown as a badge only. The comparability gate never reads it.
+    capture_source: str | None = None
 
     @property
     def short_side(self) -> int:
@@ -66,20 +68,26 @@ class Fingerprint:
 
 
 def _exif(img: Image.Image) -> tuple[str | None, int | None]:
+    """Camera label and capture hour only (DateTimeOriginal, else DateTime). GPS is never read."""
     try:
         raw = img.getexif()
     except Exception:
         return None, None
-    tags = {ExifTags.TAGS.get(k, k): v for k, v in raw.items()}
-    device = " ".join(str(tags[k]).strip() for k in ("Make", "Model") if tags.get(k)) or None
+    device = " ".join(str(raw.get(t)).strip().rstrip("\x00") for t in (0x010F, 0x0110) if raw.get(t)) or None
+    stamp = None
+    try:
+        stamp = raw.get_ifd(0x8769).get(0x9003)
+    except Exception:
+        stamp = None
     hour = None
-    stamp = tags.get("DateTime")
-    if stamp:
-        try:
-            hour = datetime.strptime(str(stamp), "%Y:%m:%d %H:%M:%S").hour
-        except ValueError:
-            pass
-    return device, hour
+    for v in (stamp, raw.get(0x0132)):
+        if v:
+            try:
+                hour = datetime.strptime(str(v).strip().rstrip("\x00"), "%Y:%m:%d %H:%M:%S").hour
+                break
+            except ValueError:
+                continue
+    return clean_device_label(device), hour
 
 
 _CTRL = re.compile(r"[\x00-\x1f\x7f]+")

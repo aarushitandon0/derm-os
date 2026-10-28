@@ -13,7 +13,13 @@ from app.youcam import (UnitReserveError, check_unit_reserve, download_masks, no
 
 LIVE = {"X-Live-Passcode": "test-passcode"}  # live scans need it; see app/guard.py
 
-PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 64
+def _png() -> bytes:
+    b = io.BytesIO()
+    Image.new("RGBA", (4, 4), (220, 40, 40, 128)).save(b, "PNG")
+    return b.getvalue()
+
+
+PNG = _png()   # a real, metadata-free PNG: stored masks are re-encoded from their pixels
 
 
 def jpg(color=(200, 160, 140)):
@@ -140,27 +146,34 @@ def test_guard_failure_is_logged_and_scan_continues(caplog):
     assert "continuing" in caplog.text
 
 
-def test_scan_blocked_by_guard_never_calls_analyze(app_module, monkeypatch):
+def test_scan_blocked_by_guard_never_calls_analyze(app_module, tmp_path, monkeypatch):
+    """Below the reserve (the balance floor when LIVE_SCAN_MIN_BALANCE is unset): prepared data, never sent."""
     m = app_module
     monkeypatch.setenv("YOUCAM_UNIT_RESERVE", "150")
+    write_fixture(tmp_path / "fixtures", "riya", "baseline", "b1", 60.0, synthetic=True)
 
     class Low(Bal):
         def analyze(self, *a):
             raise AssertionError("must not spend units below reserve")
     monkeypatch.setattr(m, "YouCamClient", lambda: Low(120))
     r = scan(TestClient(m.app, headers=LIVE))
-    assert r.status_code == 402 and "150" in r.json()["detail"]
+    body = r.json()
+    assert r.status_code == 200 and body["capture"]["source"] == "replay"
+    assert body["capture"]["replay"]["reason"] == "balance_floor" and "Nothing was sent to YouCam" in body["notice"]
 
 
-def test_scan_continues_when_credit_call_fails(app_module, monkeypatch):
+def test_scan_falls_back_when_credit_call_fails(app_module, tmp_path, monkeypatch):
+    """An unreadable balance never lets a live scan through."""
     m = app_module
+    write_fixture(tmp_path / "fixtures", "riya", "baseline", "b1", 60.0, synthetic=True)
 
     class Flaky(Bal):
         def analyze(self, path, actions):
-            return normalize({"data": {"results": {"output": [
-                {"type": "redness", "raw_score": 70}]}}}, "sd", actions, "T")
+            raise AssertionError("must not scan when the balance can't be read")
     monkeypatch.setattr(m, "YouCamClient", lambda: Flaky(exc=RuntimeError("500")))
-    assert scan(TestClient(m.app, headers=LIVE)).status_code == 200
+    body = scan(TestClient(m.app, headers=LIVE)).json()
+    assert body["capture"]["source"] == "replay" and body["capture"]["replay"]["reason"] == "balance_unreadable"
+    assert "couldn't be checked" in body["notice"]
 
 
 # ---------------------------------------------------------------- masks

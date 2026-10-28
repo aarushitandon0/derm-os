@@ -140,6 +140,7 @@ def test_a_scan_bigger_than_the_cap_is_never_sent(env):
 
 def test_reserve_still_applies_under_the_caps(env):
     env.setenv("YOUCAM_UNIT_RESERVE", "200")
+    env.setenv("LIVE_SCAN_MIN_BALANCE", "0")          # floor lets it through; the reserve still refuses
     m = load(env, balance=205)                       # 205 - 9 < 200
     r = scan(TestClient(m.app))
     assert r.status_code == 402 and Fake.calls == [] and m.units_spent()["total"] == 0.0
@@ -236,3 +237,55 @@ def test_stored_scans_never_keep_mask_urls(env):
     cap = scan(c).json()["capture"]
     stored = json.dumps(m.get("captures", cap["id"]))
     assert "signed.example" not in stored and "https://" not in stored
+
+
+# ---------------------------------------------------------------- balance floor (LIVE_SCAN_MIN_BALANCE)
+def test_balance_floor_blocks_and_survives_a_restart(env, tmp_path):
+    env.setenv("LIVE_SCAN_MIN_BALANCE", "700")
+    m = load(env, balance=705)                       # 705 - 9 < 700
+    r = scan(TestClient(m.app)).json()
+    assert r["capture"]["source"] == "replay" and r["capture"]["replay"]["reason"] == "balance_floor"
+    assert Fake.calls == [] and "Nothing was sent to YouCam" in r["notice"]
+    # A restart wipes the database counters; the floor reads the real balance, so it still holds.
+    env.setenv("DERMOS_DB", str(tmp_path / "fresh.db"))
+    m = load(env, balance=705)
+    assert m.units_spent()["total"] == 0.0
+    assert scan(TestClient(m.app)).json()["capture"]["source"] == "replay" and Fake.calls == []
+
+
+def test_balance_floor_allows_a_scan_that_stays_above_it(env):
+    env.setenv("LIVE_SCAN_MIN_BALANCE", "700")
+    m = load(env, balance=709)                       # 709 - 9 = 700: not below the floor
+    r = scan(TestClient(m.app)).json()
+    assert r["capture"]["source"] == "live" and len(Fake.calls) == 1 and r["notice"] is None
+
+
+def test_balance_read_failure_blocks_the_scan(env):
+    env.setenv("LIVE_SCAN_MIN_BALANCE", "0")
+    m = load(env)
+
+    class NoBalance(Fake):
+        def unit_balance(self):
+            raise RuntimeError("credit endpoint down")
+    env.setattr(m, "YouCamClient", lambda: NoBalance())
+    r = scan(TestClient(m.app)).json()
+    assert r["capture"]["source"] == "replay" and r["capture"]["replay"]["reason"] == "balance_unreadable"
+    assert Fake.calls == []
+
+    class NoNumber(Fake):
+        def unit_balance(self):
+            return None
+    env.setattr(m, "YouCamClient", lambda: NoNumber())
+    assert scan(TestClient(m.app)).json()["capture"]["source"] == "replay" and Fake.calls == []
+
+
+def test_balance_floor_setting_fails_safe(monkeypatch):
+    monkeypatch.delenv("LIVE_SCAN_MIN_BALANCE", raising=False)
+    monkeypatch.setenv("YOUCAM_UNIT_RESERVE", "200")
+    assert G.min_balance() == 200.0                 # unset: falls back to the reserve
+    monkeypatch.setenv("LIVE_SCAN_MIN_BALANCE", "lots")
+    assert G.min_balance() == float("inf")          # not a number: no live scans at all
+    monkeypatch.setenv("LIVE_SCAN_MIN_BALANCE", "-5")
+    assert G.min_balance() == float("inf")
+    monkeypatch.setenv("LIVE_SCAN_MIN_BALANCE", "704")
+    assert G.min_balance() == 704.0

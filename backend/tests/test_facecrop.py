@@ -300,12 +300,19 @@ def test_trial_keeps_one_mode(m, monkeypatch):
 
 
 def test_live_scan_refused_when_balance_cannot_pay_exact_cost(m, monkeypatch):
+    """Balance 4, scan costs 9: the balance floor stops it before anything is sent."""
+    monkeypatch.setenv("LIVE_SCAN_MIN_BALANCE", "0")
     yc = FakeYouCam(balance=4)
     monkeypatch.setattr(m, "YouCamClient", lambda: yc)
     F.set_detector(lambda img: [box(300, 400, 600, 660)])
     r = scan(TestClient(m.app, headers=LIVE), _jpeg(photo_with_face()))
-    assert r.status_code == 402 and "costs 9 YouCam units and 4 are left" in r.json()["detail"]
+    assert r.status_code == 200 and r.json()["capture"]["replay"]["reason"] == "balance_floor"
     assert yc.sent == []
+    # The reserve check itself still refuses an unpayable scan when called on its own.
+    from app.youcam import UnitReserveError, check_unit_reserve
+    with pytest.raises(UnitReserveError) as e:
+        check_unit_reserve(yc, 0, 9.0)
+    assert "costs 9 YouCam units and 4 are left" in e.value.friendly
 
 
 def test_meta_publishes_the_method():

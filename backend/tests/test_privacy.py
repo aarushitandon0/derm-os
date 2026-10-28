@@ -18,7 +18,14 @@ import make_fixtures as MF  # noqa: E402
 
 LIVE = {"X-Live-Passcode": "test-passcode"}  # live scans need it; see app/guard.py
 
-PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 64
+def _png() -> bytes:
+    from PIL import Image as _I
+    b = io.BytesIO()
+    _I.new("RGBA", (4, 4), (220, 40, 40, 128)).save(b, "PNG")
+    return b.getvalue()
+
+
+PNG = _png()   # a real image: stored masks are re-encoded from their pixels, so fake bytes aren't kept
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 

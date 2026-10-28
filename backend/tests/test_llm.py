@@ -234,3 +234,31 @@ def test_intake_with_llm_off(client):
     assert c.post("/api/history/intake", json={"text": USER_TEXT}).json() == {
         "available": False, "proposals": [], "rejected": None, "dropped": 0}
     assert c.get("/api/health").json()["llm"] is False
+
+
+def test_ollama_needs_no_key_and_defaults_to_local(monkeypatch):
+    from app.llm import providers as PR
+    for k in ("LLM_BASE_URL", "LLM_MODEL", "LLM_API_KEY", "ANTHROPIC_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    p = PR.get_provider()
+    assert p is not None and p.name == "ollama" and p._key is None
+    assert p.base_url == "http://127.0.0.1:11434/v1" and p.model == PR.DEFAULT_OLLAMA_MODEL
+    assert p.timeout == PR.DEFAULT_OLLAMA_TIMEOUT          # a local model is slow; LLM_TIMEOUT overrides
+    monkeypatch.setenv("LLM_TIMEOUT", "30")
+    assert PR.get_provider().timeout is None
+    monkeypatch.delenv("LLM_TIMEOUT")
+    monkeypatch.setenv("LLM_MODEL", "gemma4:e2b")
+    assert PR.get_provider().model == "gemma4:e2b"
+
+
+def test_ollama_not_running_falls_back_to_templates(monkeypatch):
+    """Nothing listening: the call fails, call() returns None, the app shows its fixed wording."""
+    import httpx
+    from app.llm import providers as PR
+
+    def refuse(req):
+        raise httpx.ConnectError("refused")
+    p = PR.OpenAICompatibleProvider("http://127.0.0.1:11434/v1", "m", None,
+                                    http=httpx.Client(transport=httpx.MockTransport(refuse)), name="ollama")
+    assert PR.call(p, "s", "u") is None

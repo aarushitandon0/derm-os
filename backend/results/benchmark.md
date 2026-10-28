@@ -1,6 +1,6 @@
 # derm//os evidence benchmark
 
-**107 of 107 cases pass.**
+**115 of 115 cases pass.**
 
 Written and run by the derm//os team, so this is **not an independent evaluation**. Each case has an expected output written from the design doc before the engine was run. It shows the decision and evidence rules behave as designed; it says nothing about how accurate YouCam's skin scores are. No YouCam calls, no units spent. The LLM cases use a scripted stand-in provider (no network): they test the fallback and the claim validator, not any real model.
 
@@ -23,6 +23,7 @@ Run: `cd backend; python -m benchmark` (also runs under `python -m pytest`).
 | Wording stays at "during this trial" | 2 / 2 |
 | Positive persona: a comparable move beyond noise, judged by the real engine | 8 / 8 |
 | Rebuy line follows the verdict | 8 / 8 |
+| Uploaded photos: same checks as the camera, honest baselines, no GPS | 8 / 8 |
 | LLM down or draft rejected: templates shown, core flow unaffected | 7 / 7 |
 | LLM draft overclaims ("caused by" etc.): validator rejects it | 6 / 6 |
 | LLM intake proposes; the user confirms | 5 / 5 |
@@ -192,6 +193,19 @@ Run: `cd backend; python -m benchmark` (also runs under `python -m pytest`).
 | rb-06 | Itching with better scores: don't rebuy | pass |
 | rb-07 | Moved beyond noise, worse: never 'supports rebuying' | pass |
 | rb-08 | API: Meera supports; Riya lamp / day 14 / itching = can't tell / finish / don't rebuy | pass |
+
+### Uploaded photos: same checks as the camera, honest baselines, no GPS
+
+| Case | Checks | Result |
+| --- | --- | --- |
+| up-01 | Baseline with two pixel-identical photos (their metadata differs) | pass |
+| up-02 | Baseline photo times spread over 30 minutes | pass |
+| up-03 | A baseline photo has no capture time: ask, don't assume | pass |
+| up-04 | ...and the user says yes: stored as user-confirmed | pass |
+| up-05 | Same pixels by camera and by upload, warm lamp vs window baseline: same gate result | pass |
+| up-06 | Same pixels by camera and by upload, same window light: same gate result | pass |
+| up-07 | Uploaded photos carry GPS: none of it is stored | pass |
+| up-08 | Upload over 15 MB is refused before decoding | pass |
 
 ### LLM down or draft rejected: templates shown, core flow unaffected
 

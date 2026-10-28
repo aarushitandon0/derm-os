@@ -18,10 +18,10 @@ from __future__ import annotations
 import json
 import os
 import re
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import photometa
 from .youcam import SkinResult, load_result
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -88,8 +88,11 @@ def copy_masks(replay: Replay, dest: Path) -> dict[str, list[Path]]:
     for f in sorted(replay.mask_dir.iterdir()):
         if f.suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp") or "_" not in f.stem:
             continue
+        clean = photometa.clean_bytes(f.read_bytes())   # stored from pixels only: no metadata
+        if clean is None:
+            continue
         dest.mkdir(parents=True, exist_ok=True)
-        target = dest / f.name
-        shutil.copyfile(f, target)
+        target = dest / (f.stem + clean[1])
+        target.write_bytes(clean[0])
         out.setdefault(f.stem.rsplit("_", 1)[0], []).append(target)
     return out

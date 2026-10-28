@@ -57,9 +57,10 @@ LLM_VALIDATOR = "LLM draft overclaims (\"caused by\" etc.): validator rejects it
 LLM_INTAKE = "LLM intake proposes; the user confirms"
 POSITIVE = "Positive persona: a comparable move beyond noise, judged by the real engine"
 REBUY = "Rebuy line follows the verdict"
+UPLOAD = "Uploaded photos: same checks as the camera, honest baselines, no GPS"
 
 CATEGORIES = [EXCLUSION, SYNONYM, INCOMPLETE, NOTHING, REACTION, ADD_REPLACE, SEVERAL, OVERLAP,
-              NOT_COMPARABLE, SYMPTOMS, PERSISTS, NO_BASELINE, WORDING, POSITIVE, REBUY,
+              NOT_COMPARABLE, SYMPTOMS, PERSISTS, NO_BASELINE, WORDING, POSITIVE, REBUY, UPLOAD,
               LLM_DOWN, LLM_VALIDATOR, LLM_INTAKE]
 
 # Rows of the design table this benchmark cannot test yet, with the reason. None left.
@@ -370,6 +371,67 @@ def rebuy(base, follow, new=1, symptoms=()) -> str:
 V = E.Verdict
 
 # ---------------------------------------------------------------- the cases
+# ---------------------------------------------------------------- uploaded photos
+def _photo(color=(200, 160, 140), when: str | None = None, gps: bool = False) -> bytes:
+    """A plain test photo with optional EXIF time and GPS. A corner mark sized by the colour keeps
+    near-identical colours apart after JPEG compression (outside the face crop)."""
+    from PIL import Image, ImageDraw
+    e = Image.Exif()
+    if when:
+        e[0x0132] = when
+        e.get_ifd(0x8769)[0x9003] = when
+    if gps:
+        e.get_ifd(0x8825).update({1: "N", 2: (12.0, 34.0, 56.789), 3: "E", 4: (76.0, 54.0, 32.1)})
+    img = Image.new("RGB", (720, 960), color)
+    side = 8 + (color[0] * 7 + color[1] * 3 + color[2]) % 50
+    ImageDraw.Draw(img).rectangle((0, 0, side, side), fill=(0, 0, 0))
+    b = io.BytesIO()
+    img.save(b, "JPEG", exif=e)
+    return b.getvalue()
+
+
+WINDOW3 = [((200, 160, 140), "2026:10:28 09:00:00"), ((201, 160, 140), "2026:10:28 09:03:00"),
+           ((199, 161, 140), "2026:10:28 09:06:00")]
+
+
+def _files(blobs):
+    return [("images", (f"p{i}.jpg", b, "image/jpeg")) for i, b in enumerate(blobs)]
+
+
+def upload_check(blobs: list[bytes], phase: str = "baseline", **data) -> dict:
+    """POST /api/upload/precheck on the real app (free: no YouCam call, nothing stored)."""
+    with api() as c:
+        return c.post("/api/upload/precheck", files=_files(blobs), data={"phase": phase, **data}).json()
+
+
+def gate_parity(color) -> tuple[bool, bool]:
+    """Same pixels sent as a camera check-in and as an uploaded check-in, against one baseline.
+    Returns (identical gate results, comparable)."""
+    with api([60, 61, 62, 63]) as c:
+        tid = c.post("/api/trials", json={"goal_concern": "redness", "product_id": "sr-01"}).json()["id"]
+        c.post("/api/upload/scan", files=_files([_photo(col, t) for col, t in WINDOW3]),
+               data={"phase": "baseline", "trial_id": tid, "actions": "redness"})
+        shot = _photo(color, "2026:10:28 09:10:00")
+        other = _photo((color[0] - 1, color[1], color[2]), "2026:10:28 09:11:00")
+        pre = c.post("/api/upload/precheck", files=_files([shot, other]),
+                     data={"phase": "checkin", "trial_id": tid, "actions": "redness"}).json()
+        cam = c.post("/api/scan", files={"image": ("c.jpg", shot, "image/jpeg")},
+                     data={"actions": "redness", "trial_id": tid, "phase": "checkin"}).json()
+        return pre["comparability"][0] == cam["comparability"], cam["comparability"]["comparable"]
+
+
+def gps_stored() -> bool:
+    """Scan 3 uploaded photos that carry GPS; is any GPS value in the stored records?"""
+    import sqlite3
+    with api([60, 61, 62]) as c:
+        r = c.post("/api/upload/scan", files=_files([_photo(col, t, gps=True) for col, t in WINDOW3]),
+                   data={"phase": "baseline", "actions": "redness"})
+        assert r.status_code == 200, r.text
+        with sqlite3.connect(os.environ["DERMOS_DB"]) as con:
+            dump = "\n".join(row[0] for row in con.execute("SELECT body FROM captures"))
+    return "56.789" in dump or "gps" in dump.lower()
+
+
 CASES: list[Case] = [
     # Exclusions
     Case("ex-01", EXCLUSION, "Avoid fragrance; Velvet Rose lists Parfum", "blocked", lambda: status("mo-02", AVOID_FRAGRANCE)),
@@ -608,4 +670,27 @@ CASES: list[Case] = [
               "quote": "I'm allergic to lanolin"}))),
     Case("llm-18", LLM_INTAKE, "API intake proposes but saves nothing",
          (["suspected_reaction", "confirmed_allergy"], []), lambda: api_llm((INTAKE_GOOD,), "intake")),
+    # Uploaded photos
+    Case("up-01", UPLOAD, "Baseline with two pixel-identical photos (their metadata differs)",
+         (False, "duplicate"),
+         lambda: (lambda r: (r["ok"], r["code"]))(upload_check(
+             [_photo(*WINDOW3[0]), _photo(WINDOW3[0][0], "2026:10:28 09:04:00"), _photo(*WINDOW3[2])]))),
+    Case("up-02", UPLOAD, "Baseline photo times spread over 30 minutes", (False, "spread"),
+         lambda: (lambda r: (r["ok"], r["code"]))(upload_check(
+             [_photo(*WINDOW3[0]), _photo(*WINDOW3[1]), _photo((198, 160, 141), "2026:10:28 09:30:00")]))),
+    Case("up-03", UPLOAD, "A baseline photo has no capture time: ask, don't assume",
+         (False, "confirm_sitting", True),
+         lambda: (lambda r: (r["ok"], r["code"], r["needs_confirmation"]))(upload_check(
+             [_photo(*WINDOW3[0]), _photo(*WINDOW3[1]), _photo((198, 162, 140))]))),
+    Case("up-04", UPLOAD, "...and the user says yes: stored as user-confirmed", (True, "user-confirmed"),
+         lambda: (lambda r: (r["ok"], r["timing"]))(upload_check(
+             [_photo(*WINDOW3[0]), _photo(*WINDOW3[1]), _photo((198, 162, 140))], same_sitting="true"))),
+    Case("up-05", UPLOAD, "Same pixels by camera and by upload, warm lamp vs window baseline: same gate result",
+         (True, False), lambda: gate_parity((240, 150, 60))),
+    Case("up-06", UPLOAD, "Same pixels by camera and by upload, same window light: same gate result",
+         (True, True), lambda: gate_parity((200, 160, 140))),
+    Case("up-07", UPLOAD, "Uploaded photos carry GPS: none of it is stored", False, gps_stored),
+    Case("up-08", UPLOAD, "Upload over 15 MB is refused before decoding", "too_big",
+         lambda: upload_check([b"\xff\xd8\xff" + b"0" * (15 * 1024 * 1024), _photo(*WINDOW3[1]),
+                               _photo(*WINDOW3[2])])["code"]),
 ]

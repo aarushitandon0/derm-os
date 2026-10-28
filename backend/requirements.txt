@@ -8,3 +8,5 @@ python-dotenv>=1.0
 # Server-side face crop (app/facecrop.py). The ~230 KB model downloads to app/models/ on first use.
 mediapipe>=0.10.20
 numpy>=1.26
+# HEIC/HEIF uploads (iPhone photos). Python 3.12 wheels for Linux and Windows; without it HEIC is refused.
+pillow-heif>=1.0

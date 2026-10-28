@@ -37,7 +37,7 @@ export const VERDICT: Record<VerdictCode, { kicker: string; tone: Tone; next: st
   moved_beyond_noise: {
     kicker: "Changed during this trial",
     tone: "moved",
-    next: "This moved further than your own scan-to-scan range. Seasons, sleep and cycles move skin too, so this is not proof the product did it.",
+    next: "This moved further than your own scan-to-scan range, on photos taken under matching conditions.",
   },
 };
 
@@ -57,7 +57,7 @@ export const RECORD: Record<RecordType, { label: string; short: string; rule: st
   confirmed_allergy: {
     label: "Clinician-confirmed allergy",
     short: "Confirmed",
-    rule: "Diagnosed by a clinician. Blocks the ingredient and is marked as confirmed in your visit brief.",
+    rule: "Confirmed by a clinician. Blocks the ingredient and is marked as confirmed in your visit brief.",
     target: "ingredient",
   },
 };
@@ -105,7 +105,7 @@ export const ROLE_LABEL: Record<string, string> = {
   cleanser: "Cleanse",
   toner: "Tone",
   serum: "Serum",
-  treatment: "Treat",
+  treatment: "Treatment",
   moisturiser: "Moisturise",
   sunscreen: "Protect",
 };
@@ -119,7 +119,7 @@ export const addDays = (iso: string, d: number) => new Date(new Date(iso).getTim
 
 export const daysSince = (iso: string) => Math.floor((Date.now() - new Date(iso).getTime()) / 864e5);
 
-export const NOT_DIAGNOSIS = "Decision support, not a diagnosis.";
+export const NOT_DIAGNOSIS = "Decision support, not diagnosis.";
 
 // ------------------------------------------------------------------ redesign copy
 // Reactions: a stop symptom stays in force until the user marks it resolved.

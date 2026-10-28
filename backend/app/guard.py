@@ -27,7 +27,8 @@ PASSCODE_HEADER = "X-Live-Passcode"
 
 
 def demo_mode() -> bool:
-    return flag("DEMO_MODE")
+    """On unless DEMO_MODE is explicitly 0: a fresh deploy never spends units by accident."""
+    return flag("DEMO_MODE", "1")
 
 
 def live_passcode() -> str | None:
@@ -62,6 +63,34 @@ def scan_source(header: str | None) -> tuple[str, str | None]:
         raise HTTPException(403, "Live scans need the right passcode. Remove it to use prepared demo data."
                             if live_passcode() else "Live scans aren't enabled on this server.")
     return "replay", "no_passcode"
+
+
+# ---------------------------------------------------------------- judge unit caps
+# Live judge scans also stop at these YouCam unit totals, counted in this server's database
+# (app/main.py `spend` table). On Render's free disk that database resets on every restart.
+DEFAULT_CAP_TOTAL, DEFAULT_CAP_DAILY = 300.0, 100.0
+
+
+def _units_env(name: str, default: float) -> float:
+    try:
+        v = float(os.environ.get(name, default))
+    except ValueError:
+        return default
+    return v if v >= 0 else default
+
+
+def judge_caps() -> tuple[float, float]:
+    """(JUDGE_UNIT_CAP_TOTAL, JUDGE_UNIT_CAP_DAILY), defaults 300 and 100 units."""
+    return _units_env("JUDGE_UNIT_CAP_TOTAL", DEFAULT_CAP_TOTAL), _units_env("JUDGE_UNIT_CAP_DAILY", DEFAULT_CAP_DAILY)
+
+
+def cap_message(reason: str) -> str:
+    total, daily = judge_caps()
+    if reason == "judge_cap_daily":
+        return (f"Live scans have used today's {daily:g} YouCam units, so this scan used prepared demo data "
+                "instead. Nothing was sent to YouCam. Live scans start again tomorrow (UTC).")
+    return (f"Live scans have used this demo's {total:g} YouCam units, so this scan used prepared demo data "
+            "instead. Nothing was sent to YouCam.")
 
 
 # ---------------------------------------------------------------- rate limit

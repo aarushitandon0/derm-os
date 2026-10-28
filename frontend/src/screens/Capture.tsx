@@ -91,6 +91,8 @@ export default function Capture({ phase, trialId }: { phase: Phase; trialId?: st
 
   const [stage, setStage] = useState<Stage>("starting");
   const [error, setError] = useState<string | null>(null);
+  // Set when the server replayed prepared data instead of a live scan (judge unit caps).
+  const [notice, setNotice] = useState<string | null>(null);
   const [res, setRes] = useState<{ w: number; h: number } | null>(null);
   const [checks, setChecks] = useState<CheckItem[]>(() => checklist(null, null, { width: 0, height: 0, rule }));
   const [ready, setReady] = useState(false);
@@ -318,6 +320,7 @@ export default function Capture({ phase, trialId }: { phase: Phase; trialId?: st
         setSteps((s) => ({ ...s, prepare: "done" }));
         setDone(n);
         setShot({ capture: r.capture, comparability: r.comparability, liveChecked });
+        setNotice(r.notice ?? null);
         // Baseline: straight back to the camera for the next shot, after a look away.
         if (phase === "baseline" && n < total) {
           lookAwayRef.current = "waiting";
@@ -443,6 +446,7 @@ export default function Capture({ phase, trialId }: { phase: Phase; trialId?: st
             </li>
           ))}
         </ul>
+        {notice && <Notice tone="warn">{notice}</Notice>}
         {shot.capture.source === "replay" && (
           <p className="small muted">Scores are prepared data; the conditions above were measured from your real photo.</p>
         )}
@@ -527,6 +531,7 @@ export default function Capture({ phase, trialId }: { phase: Phase; trialId?: st
           <Notice tone="warn">The face guide couldn't load (it needs a connection the first time). Reload to try again.</Notice>
         )}
         {error && <Notice tone="stop">{error}</Notice>}
+        {notice && <Notice tone="warn">{notice}</Notice>}
 
         <div className="shutterwrap">
           <div className={`shutterbox${counting ? " is-counting" : ""}`}>

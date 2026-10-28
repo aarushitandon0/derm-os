@@ -15,7 +15,19 @@ export function VerdictHero({ report }: { report: Report }) {
       </p>
       <p className="verdict__sentence">{report.message}</p>
       <p className="verdict__next">{v.next}</p>
+      <RebuyLine text={report.rebuy} />
     </section>
+  );
+}
+
+/** The shopping decision, as the backend mapped it from the verdict. Never computed here. */
+export function RebuyLine({ text }: { text?: string }) {
+  if (!text) return null;
+  return (
+    <p className="rebuy">
+      <span className="rebuy__label">Rebuy?</span>
+      <span>{text}</span>
+    </p>
   );
 }
 

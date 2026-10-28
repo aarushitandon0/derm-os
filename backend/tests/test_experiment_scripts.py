@@ -176,10 +176,10 @@ def test_dry_run_shows_normalisation_and_exact_cost_and_sends_nothing(tmp_path, 
 
 def test_refuses_when_balance_cannot_cover_the_whole_run(tmp_path, capsys):
     folder = photo_set(tmp_path / "p")
-    client = FakeClient([result({"redness": 50.0})] * 4, balance=40)   # 4 x 12 = 48 > 40
+    client = FakeClient([result({"redness": 50.0})] * 4, balance=30)   # 4 x 9 = 36 > 30
     assert run(folder, tmp_path / "r", client) == 1
     out = capsys.readouterr().out
-    assert client.sent == [] and "costs 48 units (4 x 12) and the balance is 40" in out
+    assert client.sent == [] and "costs 36 units (4 x 9) and the balance is 30" in out
 
 
 def test_four_units_cannot_pay_for_one_scan(tmp_path, capsys):

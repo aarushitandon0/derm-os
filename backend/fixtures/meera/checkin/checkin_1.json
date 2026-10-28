@@ -1,0 +1,48 @@
+{
+  "meta": {
+    "mode": "sd",
+    "actions": [
+      "redness",
+      "acne",
+      "texture",
+      "pore"
+    ],
+    "task_id": "synthetic-meera-checkin-1",
+    "synthetic": true,
+    "note": "Hand-made placeholder for the guided demo's second persona, not a real YouCam result."
+  },
+  "response": {
+    "status": 200,
+    "data": {
+      "task_status": "success",
+      "results": {
+        "output": [
+          {
+            "type": "redness",
+            "raw_score": 64.6,
+            "ui_score": 77,
+            "mask_urls": []
+          },
+          {
+            "type": "acne",
+            "raw_score": 74.4,
+            "ui_score": 83,
+            "mask_urls": []
+          },
+          {
+            "type": "texture",
+            "raw_score": 61.0,
+            "ui_score": 75,
+            "mask_urls": []
+          },
+          {
+            "type": "pore",
+            "raw_score": 57.9,
+            "ui_score": 73,
+            "mask_urls": []
+          }
+        ]
+      }
+    }
+  }
+}

@@ -98,7 +98,7 @@ def test_delete_called_after_mask_download(m, monkeypatch):
     assert r.status_code == 200
     assert events == ["analyze", "mask", ("delete", "T1")]
     cap = r.json()["capture"]
-    assert cap["youcam"] == {"task_id": "T1", "deleted": True, "cost_units": None}
+    assert cap["youcam"] == {"task_id": "T1", "deleted": True, "cost_units": 9.0}   # built-in SD 1-4 concern price
     assert cap["masks"]["redness"]          # the local mask copy survives the remote delete
     stored = json.dumps(m.get("captures", cap["id"]))
     assert "https://" not in stored and "SECRET" not in stored
@@ -109,7 +109,7 @@ def test_delete_failure_does_not_fail_the_scan(m, monkeypatch, caplog):
     monkeypatch.setattr(m, "YouCamClient", live_client(events, delete_exc=httpx.ConnectError("down")))
     r = scan(TestClient(m.app, headers=LIVE))
     assert r.status_code == 200
-    assert r.json()["capture"]["youcam"] == {"task_id": "T1", "deleted": False, "cost_units": None}
+    assert r.json()["capture"]["youcam"] == {"task_id": "T1", "deleted": False, "cost_units": 9.0}   # built-in SD 1-4 concern price
     assert r.json()["capture"]["raw_scores"]["redness"] == 70
     assert "delete failed" in caplog.text and "SECRET" not in caplog.text
 

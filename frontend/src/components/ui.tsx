@@ -123,7 +123,7 @@ export function Loading({ label = "Loading" }: { label?: string }) {
 }
 
 export function PreparedTag() {
-  return <span className="tag tag--prepared">Prepared data</span>;
+  return <span className="tag tag--prepared">Prepared demo data</span>;
 }
 
 /** Segmented control acting as tabs. Arrow keys move between tabs. */

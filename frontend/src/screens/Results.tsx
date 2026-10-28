@@ -1,20 +1,22 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, assetUrl, type Capture, type Evidence, type Finding, type Range } from "../api";
-import { concernLabel, fmtDate, fmtLong, fmtTime, MASKS_DEMO, VERDICT } from "../copy";
+import { concernLabel, fmtDate, fmtLong, fmtTime, MASKS_DEMO, NOT_DIAGNOSIS, VERDICT } from "../copy";
 import { RangeBar } from "../components/RangeBar";
 import { ReactionList, StopCard } from "../components/Reactions";
 import { Btn, Loading, NavBar, Notice, PageHead, PreparedTag, Section, Segmented, TabPanel } from "../components/ui";
-import { ComparabilityBadge } from "../components/Verdict";
+import { ComparabilityBadge, RebuyLine } from "../components/Verdict";
 import { TrialNotes } from "../components/TrialNotes";
 import { useStore } from "../store";
 
 type TabId = "overview" | "concerns" | "notes";
 
-export default function Results({ id }: { id: string }) {
+export default function Results({ id, tab: initialTab }: { id: string; tab?: string | null }) {
   const { meta, refresh } = useStore();
   const [ev, setEv] = useState<Evidence | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [tab, setTab] = useState<TabId>("overview");
+  const [tab, setTab] = useState<TabId>(
+    initialTab === "concerns" || initialTab === "notes" ? initialTab : "overview"
+  );
   // Plain-language wording that passed the claim validator; until then (or if off) the engine's own sentence.
   const [explained, setExplained] = useState<string | null>(null);
 
@@ -92,7 +94,11 @@ export default function Results({ id }: { id: string }) {
             </div>
             <p className="standout__text">{explained ?? report.message}</p>
             <p className="standout__next">{v.next}</p>
+            <RebuyLine text={report.rebuy} />
           </section>
+          {report.comparability && !report.comparability.comparable && (
+            <ComparabilityBadge c={report.comparability} retakeTo={`/capture?mode=checkin&trial=${id}`} />
+          )}
 
           <Section
             label="Concerns"
@@ -113,6 +119,7 @@ export default function Results({ id }: { id: string }) {
               See progress
             </Btn>
           </div>
+          <p className="notdx">{NOT_DIAGNOSIS}</p>
         </TabPanel>
       )}
 
@@ -173,7 +180,7 @@ export default function Results({ id }: { id: string }) {
             </Btn>
           </div>
           <p className="foot small">
-            Rule set {report.rule_version}. The strongest thing derm//os says is “changed during this trial”, never “caused by”.
+            Rule set {report.rule_version}. The strongest thing derm//os says is “changed during this trial”.
           </p>
         </TabPanel>
       )}

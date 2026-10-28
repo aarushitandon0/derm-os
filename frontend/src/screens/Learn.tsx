@@ -103,7 +103,7 @@ export default function Learn({ section }: { section?: string | null }) {
       <Section label="Two rules that never bend">
         <ul className="bullets">
           <li>Symptoms outrank scores. {REACTION_RULE}</li>
-          <li>The strongest thing derm//os says is “changed during this trial”, never “caused by”. Seasons, sleep and cycles move skin too.</li>
+          <li>The strongest thing derm//os says is “changed during this trial”. It never names the product as the reason: seasons, sleep and cycles move skin too.</li>
           <li>A product with an incomplete ingredient list is “unknown”, never a pass. With no ingredient recorded to avoid, every product shows “nothing to check against yet”, also never a pass.</li>
         </ul>
       </Section>
@@ -111,8 +111,8 @@ export default function Learn({ section }: { section?: string | null }) {
       <Section label="Where the AI fits">
         <p className="prose">
           The AI only extracts and words things. Rules decide. It can turn your own description into suggested history records,
-          which you confirm one by one, and it can put a result into plain sentences. A checker rejects any sentence that claims a
-          cause, names a condition, mentions a product or number that isn't in your record, or sounds surer than the verdict; then
+          which you confirm one by one, and it can put a result into plain sentences. A checker rejects any sentence that names the
+          product as the reason for a change, names a condition, mentions a product or number that isn't in your record, or sounds surer than the verdict; then
           you see the fixed wording instead. Verdicts and exclusion checks never go through the AI
           {health?.llm === false ? ", and on this server it is switched off" : ""}.
         </p>

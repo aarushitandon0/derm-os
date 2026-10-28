@@ -20,11 +20,20 @@ Usage (from backend/; the key is read from backend/.env):
     python scripts/run_experiments.py ../photos --actions redness,texture,pore,radiance
     python scripts/run_experiments.py ../photos --hd             # HD, only if EVERY photo can reach it
     python scripts/run_experiments.py ../photos --replay         # recompute from saved results, no API calls
+    python scripts/run_experiments.py ../photos --only window_1  # pilot: one photo, balance before and after
+    python scripts/run_experiments.py ../photos --skip-done      # full run; the pilot's result is reused
+
+Only photos directly in the folder are used: subfolders (photos/spare/, photos/normalised/) are
+ignored entirely. --actions takes YouCam SD concern names only (validated before any call).
+A photo that already has a successful result from this shoot (same file, same crop) is never
+scanned again: its saved result is reused at no cost. --skip-done says so explicitly; it is
+also what happens without it.
 
 Before a live run the script prints the exact unit cost (from YouCam's price list) and
 refuses unless the balance covers the WHOLE run: no partial runs. A live run stops at the
 first image rejection. report.md/report.json are written only when every photo has a
-result and every condition has at least 2 scans.
+result and every condition has at least 2 scans. After a full run (or --replay) the
+false-change analysis (scripts/analyze_experiment.py) adds its section to report.md.
 
 Outputs results/<photo>.json (raw YouCam responses), results/media/<photo>/ (masks),
 results/report.json and results/report.md. Then: python scripts/make_fixtures.py
@@ -65,19 +74,21 @@ from typing import Any, Callable  # noqa: E402
 from app import facecrop as F  # noqa: E402
 from app.evidence import Capture, compare_conditions, noise_summary, ranges  # noqa: E402
 from app.fingerprint import Fingerprint, measure_normalised  # noqa: E402
-from app.youcam import (IMAGE_ERRORS, YouCamClient, YouCamError, actions_for_mode,  # noqa: E402
+from app.youcam import (IMAGE_ERRORS, SD_ACTIONS, YouCamClient, YouCamError, actions_for_mode,  # noqa: E402
                         delete_task_quietly, download_masks, load_result, save_result, scan_cost_from,
                         validate_actions)
+from scripts import analyze_experiment  # noqa: E402
 
-DEFAULT_CONCERNS = ["redness", "texture", "acne", "pore", "oiliness", "moisture", "radiance", "age_spot"]
+DEFAULT_CONCERNS = ["redness", "acne", "texture", "pore"]   # same 4 as the app (SD, 9 units each)
 IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png")
 LEGACY_MARKER = "legacy_palette.json"
 
 
 def group_photos(folder: Path) -> dict[str, list[Path]]:
+    """Photos directly in `folder`, by condition. Subfolders (spare/, normalised/) are never read."""
     groups: dict[str, list[Path]] = defaultdict(list)
     for p in sorted(folder.iterdir()):
-        if not p.is_file() or p.suffix.lower() not in IMAGE_SUFFIXES:
+        if p.is_dir() or not p.is_file() or p.suffix.lower() not in IMAGE_SUFFIXES:
             continue
         cond = p.stem.rsplit("_", 1)[0] if "_" in p.stem else p.stem
         groups[cond].append(p)
@@ -230,6 +241,11 @@ def source_path(out: Path, stem: str) -> Path:
     return out / f"{stem}.source.json"
 
 
+def fingerprint_path(out: Path, stem: str) -> Path:
+    """Capture conditions of the normalised photo, for scripts/analyze_experiment.py (numbers only)."""
+    return out / f"{stem}.fingerprint.json"
+
+
 def source_record(it: Prepared) -> dict:
     return {"file": it.path.name, "sha256": it.sha256, "normalisation": it.info.get("version"),
             "mode": it.info.get("mode"), "target_face_px": it.info.get("target_face_px")}
@@ -317,6 +333,9 @@ def run_scans(items: list[Prepared], actions: list[str], mode: str, out: Path, c
                 log(f"\nSTOPPED: {run.stop_reason}")
                 return run
             continue
+        if it.fp is not None:
+            fp = {k: v for k, v in it.fp.to_dict().items() if k != "normalisation"}
+            fingerprint_path(out, stem).write_text(json.dumps(fp))
         log(f"  {src:6s} {p.name}: " + ", ".join(f"{k}={v:.1f}" for k, v in sorted(res.raw_scores().items())))
         run.captures[it.cond].append(Capture(res.raw_scores(), it.fp, mode, tuple(actions)))
         run.succeeded.append(p.name)
@@ -329,6 +348,30 @@ def scan_price(client: Any, actions: list[str]) -> tuple[float, str]:
     if client is not None and hasattr(client, "scan_cost"):
         return client.scan_cost(actions)
     return scan_cost_from({}, getattr(client, "version", "v2.1"), actions)
+
+
+def check_sd_concerns(concerns: list[str]) -> str | None:
+    """--actions must be YouCam SD concern names (the client's SD_ACTIONS). Checked before any call."""
+    if not concerns:
+        return "no concerns given"
+    unknown = [c for c in concerns if c not in SD_ACTIONS]
+    if unknown:
+        return (f"unknown SD concern name(s): {', '.join(unknown)}. "
+                f"Valid: {', '.join(sorted(SD_ACTIONS))}")
+    if len(set(concerns)) != len(concerns):
+        return "a concern is listed twice"
+    return None
+
+
+def select_only(groups: dict[str, list[Path]], only: str) -> tuple[dict[str, list[Path]], str | None]:
+    """Keep just the named photos (stems or file names, comma-separated)."""
+    want = {Path(x.strip()).stem for x in only.split(",") if x.strip()}
+    picked = {c: [p for p in v if p.stem in want] for c, v in groups.items()}
+    picked = {c: v for c, v in picked.items() if v}
+    missing = want - {p.stem for v in picked.values() for p in v}
+    if missing or not want:
+        return picked, f"--only names photos that aren't in the folder: {', '.join(sorted(missing)) or '(none given)'}"
+    return picked, None
 
 
 def cost_blocker(n_send: int, each: float, balance: float | None, max_live: int | None) -> str | None:
@@ -465,15 +508,21 @@ def main(argv: list[str] | None = None, detect: F.Detector | None = None, client
     ap.add_argument("--replay", action="store_true")
     ap.add_argument("--max-live", type=int, default=None, help="refuse a run that needs more live scans than this")
     ap.add_argument("--out", default="results")
+    ap.add_argument("--only", default=None,
+                    help="pilot: scan just these photos (e.g. window_1). Reads the balance before and after, "
+                         "reports the units actually charged, writes no report")
+    ap.add_argument("--skip-done", action="store_true",
+                    help="never rescan a photo that already has a successful result from this shoot "
+                         "(always on; this makes it explicit)")
     args = ap.parse_args(argv)
 
     folder, out = Path(args.folder), Path(args.out)
     concerns = [c.strip() for c in args.actions.split(",") if c.strip()]
-    try:
-        validate_actions(actions_for_mode(concerns, "sd"))
-    except ValueError as e:
-        print(f"Bad --actions: {e}")
+    bad = check_sd_concerns(concerns)
+    if bad:
+        print(f"Bad --actions: {bad}. Nothing sent.")
         return 1
+    validate_actions(concerns)   # the same check the client runs before every task
 
     if not folder.is_dir():
         print(f"No folder {folder}")
@@ -482,7 +531,13 @@ def main(argv: list[str] | None = None, detect: F.Detector | None = None, client
     if not groups:
         print(f"No .jpg/.png photos found in {folder}")
         return 1
-    if args.baseline not in groups:
+    pilot = args.only is not None
+    if pilot:
+        groups, missing = select_only(groups, args.only)
+        if missing:
+            print(f"{missing}. Nothing sent.")
+            return 1
+    elif args.baseline not in groups:
         print(f"No photos named '{args.baseline}_N' found. Conditions found: {list(groups)}")
         return 1
 
@@ -521,8 +576,11 @@ def main(argv: list[str] | None = None, detect: F.Detector | None = None, client
         return 1
     each, price_src = scan_price(client, actions)
     total = each * len(to_send)
+    done = n_photos - len(to_send) - len(refused)
     print(f"\nCost: {len(to_send)} live scan(s) x {each:g} units ({mode.upper()}, {len(actions)} concerns, "
-          f"{price_src}) = {total:g} units. {n_photos - len(to_send) - len(refused)} reuse saved results.")
+          f"{price_src}) = {total:g} units. {done} reuse saved results.")
+    if done:
+        print(f"Skipping {done} photo(s) already scanned in this shoot (saved results reused, no units).")
 
     bal = None
     if client is not None and not args.replay:
@@ -535,7 +593,7 @@ def main(argv: list[str] | None = None, detect: F.Detector | None = None, client
     if args.dry_run:
         if refused:
             print(f"\n{len(refused)} photo(s) would be refused: " + ", ".join(it.path.name for it in refused))
-        thin = thin_conditions(groups)
+        thin = None if pilot else thin_conditions(groups)
         if thin:
             print(f"\n{thin}")
         if bal is not None:
@@ -549,7 +607,7 @@ def main(argv: list[str] | None = None, detect: F.Detector | None = None, client
         print(f"\nNothing sent: {len(refused)} photo(s) can't be prepared ("
               + "; ".join(f"{it.path.name}: {F.REFUSALS.get(it.refusal, it.refusal)}" for it in refused) + ").")
         return 1
-    thin = thin_conditions(groups)
+    thin = None if pilot else thin_conditions(groups)
     if thin:
         print(f"\nNothing sent: {thin}")
         return 1
@@ -560,14 +618,27 @@ def main(argv: list[str] | None = None, detect: F.Detector | None = None, client
             return 1
 
     run = run_scans(items, actions, mode, out, client, args.replay, legacy=legacy)
+    after = None
     if not args.replay:
         print(f"\nLive scan requests sent this run: {run.live_sent} (YouCam only charges for successful scans)")
         try:
-            after = client.unit_balance() if run.live_sent else None
+            after = client.unit_balance() if (run.live_sent or pilot) else None
         except Exception:  # noqa: BLE001 - informational
             after = None
         if after is not None:
             print(f"Units left: {after:g}")
+
+    if pilot:
+        if bal is not None and after is not None:
+            print(f"Pilot: balance {bal:g} before, {after:g} after: {bal - after:g} units actually charged "
+                  f"for {run.live_sent} live scan(s) (the price list said {each:g} each).")
+        else:
+            print("Pilot: the balance couldn't be read before and after, so the units charged are unknown.")
+        if run.succeeded:
+            print(f"Saved: {', '.join(run.succeeded)}. The full run reuses these at no cost: run again "
+                  "without --only (add --skip-done to say so).")
+        print("Pilot run: no report written.")
+        return 0 if run.n_success and not run.failed else 1
 
     blocker = report_blocker(groups, run)
     if blocker:
@@ -578,6 +649,8 @@ def main(argv: list[str] | None = None, detect: F.Detector | None = None, client
     report = build_report(run, mode, actions, args.baseline)
     write_report(out, report, report_markdown(report, method_lines(items, mode, legacy)))
     print(f"\nSaved {out/'report.md'} and {out/'report.json'}")
+    # The headline number: false changes under each rule, read back from the saved results.
+    analyze_experiment.run(out)
     return 0
 
 

@@ -50,14 +50,17 @@ NOT_COMPARABLE = "Different conditions: not comparable, re-guide"
 SYMPTOMS = "Symptoms outrank improved scores"
 PERSISTS = "Unresolved stop symptom persists"
 NO_BASELINE = "Missing baseline: no trend claim"
-WORDING = "Wording never claims cause"
+WORDING = "Wording stays at \"during this trial\""
 NOTHING = "No exclusions recorded: nothing to check, never a pass"
 LLM_DOWN = "LLM down or draft rejected: templates shown, core flow unaffected"
 LLM_VALIDATOR = "LLM draft overclaims (\"caused by\" etc.): validator rejects it"
 LLM_INTAKE = "LLM intake proposes; the user confirms"
+POSITIVE = "Positive persona: a comparable move beyond noise, judged by the real engine"
+REBUY = "Rebuy line follows the verdict"
 
 CATEGORIES = [EXCLUSION, SYNONYM, INCOMPLETE, NOTHING, REACTION, ADD_REPLACE, SEVERAL, OVERLAP,
-              NOT_COMPARABLE, SYMPTOMS, PERSISTS, NO_BASELINE, WORDING, LLM_DOWN, LLM_VALIDATOR, LLM_INTAKE]
+              NOT_COMPARABLE, SYMPTOMS, PERSISTS, NO_BASELINE, WORDING, POSITIVE, REBUY,
+              LLM_DOWN, LLM_VALIDATOR, LLM_INTAKE]
 
 # Rows of the design table this benchmark cannot test yet, with the reason. None left.
 NOT_BUILT: list[tuple[str, str]] = []
@@ -131,7 +134,7 @@ def api(scores: list[float] = ()):
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
         os.environ.update(DERMOS_DB=os.path.join(d, "bench.db"), DERMOS_MEDIA=os.path.join(d, "media"),
                           DERMOS_NO_DOTENV="1", LIVE_SCAN_PASSCODE="bench", SCAN_RATE_LIMIT="0")
-        os.environ.pop("DEMO_MODE", None)
+        os.environ["DEMO_MODE"] = "0"   # "live" here is the fake below
         try:
             import app.main as m
             m = importlib.reload(m)
@@ -311,6 +314,59 @@ def api_llm(outputs: tuple, path: str):
             m.L.get_provider = original
 
 
+# ---------------------------------------------------------------- guided-demo scenes (app/scenes.py)
+def api_scene(name: str, symptoms: tuple = (), other_new: tuple = ()) -> dict:
+    """Build a prepared scene through the real app, optionally log a check-in, return /evidence."""
+    with api() as c:
+        import app.main as m
+        tid = m.build_scene(name)["trial_id"]
+        if symptoms or other_new:
+            c.post(f"/api/trials/{tid}/checkin", json={"symptoms": list(symptoms), "other_new_leave_on": list(other_new)})
+        return c.get(f"/api/trials/{tid}/evidence").json()
+
+
+def meera_caps(lamp_checkin: bool = False) -> tuple[list, list]:
+    """Meera's recorded scores as engine captures; optionally her check-ins under the warm-lamp conditions."""
+    from app import demo, scenes
+    out = []
+    for fset, n in (("baseline", 3), ("checkin", 2)):
+        caps_ = []
+        for i in range(n):
+            rp = demo.pick("meera", fset, i)
+            fp_ = scenes.fingerprint_for(rp, "lamp" if (lamp_checkin and fset == "checkin") else fset, i)
+            caps_.append(E.Capture(rp.result.raw_scores(), Fingerprint.from_dict(fp_), rp.result.mode,
+                                   tuple(rp.result.actions)))
+        out.append(caps_)
+    return out[0], out[1]
+
+
+def scene_source_mentions_verdicts() -> list[str]:
+    """Names in app/scenes.py's code (not its docstrings) that could set or fake a verdict: identifiers,
+    attributes, imported modules and dict keys. Should be none."""
+    import ast
+    from pathlib import Path
+    tree = ast.parse((Path(E.__file__).parent / "scenes.py").read_text(encoding="utf-8"))
+    banned = {"Verdict", "evaluate", "verdict", "compare_conditions", "beyond_noise", "MOVED", "evidence",
+              "report", "comparable"}
+    seen = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            seen.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            seen.add(node.attr)
+        elif isinstance(node, ast.alias):
+            seen.update(node.name.split("."))
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            seen.update(node.module.split("."))
+        elif isinstance(node, ast.Dict):
+            seen.update(k.value for k in node.keys if isinstance(k, ast.Constant) and isinstance(k.value, str))
+    return sorted(seen & banned)
+
+
+def rebuy(base, follow, new=1, symptoms=()) -> str:
+    return report(base, follow, new, symptoms).rebuy
+
+
 V = E.Verdict
 
 # ---------------------------------------------------------------- the cases
@@ -466,8 +522,43 @@ CASES: list[Case] = [
     # Wording
     Case("wd-01", WORDING, "No verdict text says 'caused' or 'because of'", [],
          lambda: [v.value for v, t in E.VERDICT_TEXT.items() if "caused" in t.lower() or "because of" in t.lower()]),
-    Case("wd-02", WORDING, "Strongest result says 'during the trial' and 'does not prove'", (True, True),
-         lambda: (lambda m: ("during the trial" in m, "does not prove" in m))(report(caps(60, 62), caps(70, 71)).message)),
+    Case("wd-02", WORDING, "Strongest result says 'during this trial' and that it can't show the product was the reason",
+         (True, True),
+         lambda: (lambda m: ("during this trial" in m, E.MOVED_CAVEAT in m))(report(caps(60, 62), caps(70, 71)).message)),
+    # Positive persona (prepared fixtures; the gate and verdict run as for any trial)
+    Case("pos-01", POSITIVE, "Meera: comparable check-ins leave her redness range", V.MOVED.value,
+         lambda: api_scene("meera")["report"]["verdict"]),
+    Case("pos-02", POSITIVE, "The pair passed the gate on light, face size, head pose, time and device",
+         (True, ["device", "face_size", "head_pose", "lighting", "mode", "time_of_day"]),
+         lambda: (lambda c: (c["comparable"], sorted(c["checked"])))(api_scene("meera")["report"]["comparability"])),
+    Case("pos-03", POSITIVE, "Wording: 'dropped beyond your usual variation during this trial', plus the caveat",
+         "Redness dropped beyond your usual variation during this trial. " + E.MOVED_CAVEAT,
+         lambda: api_scene("meera")["report"]["message"]),
+    Case("pos-04", POSITIVE, "Same scores, check-ins under a warm lamp: not comparable (no special-casing)",
+         V.NOT_COMPARABLE.value,
+         lambda: E.evaluate(*meera_caps(lamp_checkin=True), E.TrialContext(), concerns=["redness"]).verdict.value),
+    Case("pos-05", POSITIVE, "Itching logged at her check-in: Stop outranks the better scores", V.STOP_REACTION.value,
+         lambda: api_scene("meera", symptoms=("itching",))["report"]["verdict"]),
+    Case("pos-06", POSITIVE, "Another new leave-on product logged: can't tell which", V.SEVERAL_CHANGES.value,
+         lambda: api_scene("meera", other_new=("sr-04",))["report"]["verdict"]),
+    Case("pos-07", POSITIVE, "Every scan in the scene is labelled prepared data", (5, {"replay"}),
+         lambda: (lambda s: (len(s), {c["source"] for c in s}))(api_scene("meera")["series"])),
+    Case("pos-08", POSITIVE, "The scene builder never names a verdict, the gate or the engine", [],
+         scene_source_mentions_verdicts),
+    # Rebuy line
+    Case("rb-01", REBUY, "Moved beyond noise, better", E.REBUY["supports"], lambda: rebuy(caps(60, 62), caps(70, 71))),
+    Case("rb-02", REBUY, "No detectable change", E.REBUY["finish"], lambda: rebuy(caps(60, 64), caps(62, 63))),
+    Case("rb-03", REBUY, "Not comparable", E.REBUY["cant_tell"], lambda: rebuy(caps(60, 62), caps(70, 71, lum=0.3))),
+    Case("rb-04", REBUY, "Several changes, even with better scores", E.REBUY["cant_tell"],
+         lambda: rebuy(caps(60, 62), caps(70, 71), new=2)),
+    Case("rb-05", REBUY, "No baseline", E.REBUY["cant_tell"], lambda: rebuy(caps(60), caps(70, 71))),
+    Case("rb-06", REBUY, "Itching with better scores: don't rebuy", E.REBUY["stop"],
+         lambda: rebuy(caps(60, 62), caps(75, 76), symptoms=["itching"])),
+    Case("rb-07", REBUY, "Moved beyond noise, worse: never 'supports rebuying'", E.REBUY["moved_worse"],
+         lambda: rebuy(caps(70, 71), caps(60, 62))),
+    Case("rb-08", REBUY, "API: Meera supports; Riya lamp / day 14 / itching = can't tell / finish / don't rebuy",
+         (E.REBUY["supports"], E.REBUY["cant_tell"], E.REBUY["finish"], E.REBUY["stop"]),
+         lambda: tuple(api_scene(n)["report"]["rebuy"] for n in ("meera", "riya-lamp", "riya-day14", "riya-stop"))),
     # LLM down or draft rejected (scripted provider, no network)
     Case("llm-01", LLM_DOWN, "LLM off: explanation is the template", ("template", True),
          lambda: (lambda o: (o["source"], o["is_template"]))(explain_with())),

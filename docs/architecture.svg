@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 640" width="980" height="640" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" role="img" aria-labelledby="t d">
+  <title id="t">derm//os architecture (as built)</title>
+  <desc id="d">Phone PWA talks to a FastAPI server. The server crops the photo locally, measures capture conditions, and either replays prepared scores or calls YouCam Skin Analysis. A rules engine decides verdicts and exclusions; data is stored in SQLite.</desc>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#4f4a43"/>
+    </marker>
+  </defs>
+  <rect width="980" height="640" fill="#f5f1ea"/>
+  <text x="32" y="44" font-size="22" font-weight="600" fill="#1c1a17">derm//os, as built: rules decide, YouCam measures</text>
+  <text x="32" y="68" font-size="13.5" fill="#67625a">Every verdict and exclusion is deterministic code with tests. No language model in the judged build.</text>
+
+  <!-- Phone -->
+  <rect x="32" y="96" width="240" height="430" rx="16" fill="#ece6dc"/>
+  <text x="52" y="126" font-size="15" font-weight="600" fill="#1c1a17">Phone browser (PWA)</text>
+  <text x="52" y="146" font-size="12" fill="#67625a">React + TypeScript + Vite</text>
+  <g font-size="12.5" fill="#1c1a17">
+    <rect x="48" y="162" width="208" height="70" rx="10" fill="#fbf9f5"/>
+    <text x="60" y="184" font-weight="600">Live capture guide</text>
+    <text x="60" y="202">MediaPipe Face Landmarker:</text>
+    <text x="60" y="219">face size, pose, light, auto-shutter</text>
+    <rect x="48" y="242" width="208" height="52" rx="10" fill="#fbf9f5"/>
+    <text x="60" y="264" font-weight="600">Guided 90-second demo</text>
+    <text x="60" y="282">8 steps, "Prepared demo data"</text>
+    <rect x="48" y="304" width="208" height="206" rx="10" fill="#fbf9f5"/>
+    <text x="60" y="326" font-weight="600">Screens</text>
+    <text x="60" y="346">Shelf · History · Compare</text>
+    <text x="60" y="364">Trial · Check-in · Capture</text>
+    <text x="60" y="382">Results (verdict + rebuy line)</text>
+    <text x="60" y="400">Progress · Visit brief · Learn</text>
+    <text x="60" y="428" fill="#67625a">Wake-up screen when the</text>
+    <text x="60" y="446" fill="#67625a">free server is asleep</text>
+  </g>
+
+  <!-- Server -->
+  <rect x="312" y="96" width="400" height="510" rx="16" fill="#ece6dc"/>
+  <text x="332" y="126" font-size="15" font-weight="600" fill="#1c1a17">FastAPI server (Docker, Python 3.12)</text>
+  <g font-size="12.5" fill="#1c1a17">
+    <rect x="328" y="140" width="368" height="72" rx="10" fill="#fbf9f5"/>
+    <text x="340" y="162" font-weight="600">Guard (app/guard.py)</text>
+    <text x="340" y="180">DEMO_MODE=1 default · live needs passcode · per-IP rate limit</text>
+    <text x="340" y="198">judge caps 300 total / 100 a day · reserve 200 → else replay</text>
+
+    <rect x="328" y="222" width="368" height="72" rx="10" fill="#fbf9f5"/>
+    <text x="340" y="244" font-weight="600">Capture (app/facecrop.py, app/fingerprint.py)</text>
+    <text x="340" y="262">local BlazeFace crop 3:4, same face size every photo</text>
+    <text x="340" y="280">fingerprint: light, colour, face size, pose, camera, hour</text>
+
+    <rect x="328" y="304" width="368" height="110" rx="10" fill="#dce5d9"/>
+    <text x="340" y="326" font-weight="600">Evidence engine (app/evidence.py)</text>
+    <text x="340" y="344">personal noise range from 3 baseline scans</text>
+    <text x="340" y="362">comparability gate · verdict table, first match wins</text>
+    <text x="340" y="380">symptoms outrank scores · several changes → can't tell</text>
+    <text x="340" y="398">rebuy line mapped strictly from the verdict</text>
+
+    <rect x="328" y="424" width="368" height="72" rx="10" fill="#fbf9f5"/>
+    <text x="340" y="446" font-weight="600">Decision engine (app/decision.py, app/inci.py)</text>
+    <text x="340" y="464">INCI synonyms · exclusions with the label line</text>
+    <text x="340" y="482">incomplete label = unknown · add vs replace · next question</text>
+
+    <rect x="328" y="506" width="368" height="86" rx="10" fill="#fbf9f5"/>
+    <text x="340" y="528" font-weight="600">Prepared data (app/demo.py, app/scenes.py)</text>
+    <text x="340" y="546">recorded scores replayed, labelled source="replay"</text>
+    <text x="340" y="564">guided-demo scenes write rows only; the real</text>
+    <text x="340" y="582">engine computes every verdict</text>
+  </g>
+
+  <!-- Right column -->
+  <rect x="752" y="96" width="196" height="250" rx="16" fill="#f1dfd5"/>
+  <text x="768" y="126" font-size="15" font-weight="600" fill="#1c1a17">YouCam API</text>
+  <g font-size="12" fill="#1c1a17">
+    <text x="768" y="148">Skin Analysis v2.1, SD</text>
+    <text x="768" y="172">POST /s2s/v2.0/file</text>
+    <text x="768" y="190">PUT presigned upload</text>
+    <text x="768" y="208">POST /s2s/v2.1/task/</text>
+    <text x="778" y="224">skin-analysis</text>
+    <text x="768" y="242">GET …/skin-analysis/{id}</text>
+    <text x="768" y="260">GET mask URLs (saved now)</text>
+    <text x="768" y="278">POST /s2s/v2.0/task/delete</text>
+    <text x="768" y="296">GET /s2s/v1.0/client/credit</text>
+    <text x="768" y="314">GET /s2s/v2.0/credit/</text>
+    <text x="778" y="330">feature-cost</text>
+  </g>
+
+  <rect x="752" y="366" width="196" height="96" rx="16" fill="#ece6dc"/>
+  <text x="768" y="394" font-size="15" font-weight="600" fill="#1c1a17">SQLite</text>
+  <g font-size="12" fill="#1c1a17">
+    <text x="768" y="414">shelf · history · trials</text>
+    <text x="768" y="432">captures (scores, fingerprint)</text>
+    <text x="768" y="450">spend (judge unit caps)</text>
+  </g>
+
+  <rect x="752" y="482" width="196" height="124" rx="16" fill="none" stroke="#67625a" stroke-dasharray="5 4"/>
+  <text x="768" y="508" font-size="14" font-weight="600" fill="#67625a">Next (not judged)</text>
+  <g font-size="12" fill="#67625a">
+    <text x="768" y="528">optional LLM wording,</text>
+    <text x="768" y="546">behind a claim validator</text>
+    <text x="768" y="564">(code in app/llm, off)</text>
+    <text x="768" y="586">Postgres + object storage</text>
+  </g>
+
+  <!-- arrows -->
+  <g stroke="#4f4a43" stroke-width="1.6" fill="none">
+    <path d="M272 250 L312 250" marker-end="url(#a)"/>
+    <path d="M312 300 L272 300" marker-end="url(#a)"/>
+    <path d="M712 220 L752 220" marker-end="url(#a)"/>
+    <path d="M712 410 L752 410" marker-end="url(#a)"/>
+  </g>
+  <g font-size="11" fill="#4f4a43">
+    <text x="276" y="242">photo</text>
+    <text x="274" y="318">result</text>
+  </g>
+
+  <text x="32" y="628" font-size="12" fill="#67625a">Photos are cropped and measured, sent to YouCam only for a live scan, then deleted; YouCam is asked to delete the task once masks are saved. Decision support, not diagnosis.</text>
+</svg>

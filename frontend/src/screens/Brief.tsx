@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, assetUrl, type Evidence } from "../api";
-import { CHECK, concernLabel, fmtDate, fmtLong, MASKS_DEMO, RECORD, symptomLabel } from "../copy";
+import { CHECK, concernLabel, fmtDate, fmtLong, MASKS_DEMO, NOT_DIAGNOSIS, RECORD, symptomLabel } from "../copy";
 import { Icon } from "../components/Icon";
 import { useTrialNotes } from "../components/TrialNotes";
 import { Btn, Loading, NavBar, Notice, PageHead, PreparedTag, Segmented, TabPanel, Wordmark } from "../components/ui";
@@ -77,6 +77,7 @@ function BriefFor({ id }: { id: string }) {
     `Watching: ${concernLabel(t.goal_concern).toLowerCase()}.`,
     `Currently testing: ${p.name} (${p.brand}, ${p.leave_on ? "leave-on" : "wash-off"}), since ${fmtLong(t.started_at)}.`,
     `So far: ${r.message}`,
+    `Rebuy: ${r.rebuy}`,
     ...ev.reactions.map(
       (x) =>
         `Reported ${symptomLabel(x.symptom).toLowerCase()} on ${fmtLong(x.logged_at)}; ${
@@ -111,7 +112,7 @@ function BriefFor({ id }: { id: string }) {
               <h1 className="brief__title">Visit brief</h1>
             </header>
             <p className="small muted">
-              Prepared by the patient on {fmtLong(new Date())}. Self-recorded; not clinically reviewed; not a diagnosis.{" "}
+              Prepared by the patient on {fmtLong(new Date())}. Self-recorded and not reviewed by a clinician. {NOT_DIAGNOSIS}{" "}
               {prepared && <PreparedTag />}
             </p>
 

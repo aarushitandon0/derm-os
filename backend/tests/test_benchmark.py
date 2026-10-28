@@ -2,6 +2,8 @@
 
 Each test is one row of the benchmark table in the design doc. Run: pytest -q
 """
+import re
+
 import pytest
 
 from app import decision as D
@@ -132,7 +134,8 @@ def test_non_overlapping_ranges_move_beyond_noise_without_causal_claim():
     rep = E.evaluate([cap(60), cap(62)], [cap(70), cap(71)], E.TrialContext())
     assert rep.verdict == E.Verdict.MOVED
     assert rep.findings[0].direction == "better"
-    assert "does not prove" in rep.message
+    assert rep.message == "Redness dropped beyond your usual variation during this trial. " + E.MOVED_CAVEAT
+    assert not re.search(r"\b(caus\w*|prove\w*)\b", rep.message, re.I)
 
 
 def test_different_light_is_not_comparable():

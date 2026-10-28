@@ -2589,3 +2589,178 @@ button,
   background: #efe6d3;
   color: #6c5320;
 }
+
+/* ------------------------------------------------------------------ landing additions */
+.welcome__sub {
+  margin-top: 12px;
+  max-width: 30ch;
+  font-size: 15.5px;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+
+/* ------------------------------------------------------------------ guided demo */
+.guidebar {
+  position: sticky;
+  top: 0;
+  z-index: 15;
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 12px var(--gutter) 12px;
+  background: var(--raised);
+  box-shadow: 0 1px 0 var(--line);
+}
+.guidebar__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.guidebar__count {
+  font-size: 13px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.guidebar__dots {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 4px;
+  margin: 10px 0 8px;
+  padding: 0;
+  list-style: none;
+}
+.guidebar__dots li {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--card-2);
+}
+.guidebar__dots li.is-done {
+  background: var(--ink-3);
+}
+.guidebar__dots li.is-now {
+  background: var(--ink);
+}
+.guidebar__title {
+  font-weight: 600;
+  font-size: 15.5px;
+  line-height: 1.3;
+}
+.guidebar__look {
+  margin-top: 2px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+.guidebar__err {
+  margin-top: 6px;
+  font-size: 13.5px;
+  color: var(--stop);
+}
+.guidebar__btns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+.guidebar__btns .btn {
+  min-height: 44px;
+}
+.guidebar__exit {
+  grid-column: 1 / -1;
+  justify-self: center;
+  min-height: 44px;
+}
+
+.demo__tag {
+  margin: 4px 0 14px;
+}
+.demo__steps {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.demo__step {
+  display: flex;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--r);
+  background: var(--card);
+}
+.demo__num {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 13px;
+  font-weight: 600;
+}
+.demo__body {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.demo__title {
+  font-weight: 600;
+  font-size: 15px;
+  line-height: 1.3;
+}
+.demo__look {
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------------ waking the server */
+.waking {
+  gap: 14px;
+  text-align: center;
+}
+.waking__head {
+  font-family: var(--serif);
+  font-size: 24px;
+  line-height: 1.25;
+}
+
+/* ------------------------------------------------------------------ rebuy line */
+.rebuy {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: var(--r-sm);
+  background: var(--raised);
+  font-size: 14.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.rebuy__label {
+  flex: none;
+  font-weight: 600;
+}
+.notdx {
+  margin-top: 18px;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+/* ------------------------------------------------------------------ reduced motion: a safety net for everything */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

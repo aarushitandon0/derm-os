@@ -1,6 +1,6 @@
 # derm//os evidence benchmark
 
-**91 of 91 cases pass.**
+**107 of 107 cases pass.**
 
 Written and run by the derm//os team, so this is **not an independent evaluation**. Each case has an expected output written from the design doc before the engine was run. It shows the decision and evidence rules behave as designed; it says nothing about how accurate YouCam's skin scores are. No YouCam calls, no units spent. The LLM cases use a scripted stand-in provider (no network): they test the fallback and the claim validator, not any real model.
 
@@ -20,7 +20,9 @@ Run: `cd backend; python -m benchmark` (also runs under `python -m pytest`).
 | Symptoms outrank improved scores | 6 / 6 |
 | Unresolved stop symptom persists | 4 / 4 |
 | Missing baseline: no trend claim | 4 / 4 |
-| Wording never claims cause | 2 / 2 |
+| Wording stays at "during this trial" | 2 / 2 |
+| Positive persona: a comparable move beyond noise, judged by the real engine | 8 / 8 |
+| Rebuy line follows the verdict | 8 / 8 |
 | LLM down or draft rejected: templates shown, core flow unaffected | 7 / 7 |
 | LLM draft overclaims ("caused by" etc.): validator rejects it | 6 / 6 |
 | LLM intake proposes; the user confirms | 5 / 5 |
@@ -158,12 +160,38 @@ Run: `cd backend; python -m benchmark` (also runs under `python -m pytest`).
 | mb-03 | One check-in scan only | pass |
 | mb-04 | No trend wording when the baseline is missing | pass |
 
-### Wording never claims cause
+### Wording stays at "during this trial"
 
 | Case | Checks | Result |
 | --- | --- | --- |
 | wd-01 | No verdict text says 'caused' or 'because of' | pass |
-| wd-02 | Strongest result says 'during the trial' and 'does not prove' | pass |
+| wd-02 | Strongest result says 'during this trial' and that it can't show the product was the reason | pass |
+
+### Positive persona: a comparable move beyond noise, judged by the real engine
+
+| Case | Checks | Result |
+| --- | --- | --- |
+| pos-01 | Meera: comparable check-ins leave her redness range | pass |
+| pos-02 | The pair passed the gate on light, face size, head pose, time and device | pass |
+| pos-03 | Wording: 'dropped beyond your usual variation during this trial', plus the caveat | pass |
+| pos-04 | Same scores, check-ins under a warm lamp: not comparable (no special-casing) | pass |
+| pos-05 | Itching logged at her check-in: Stop outranks the better scores | pass |
+| pos-06 | Another new leave-on product logged: can't tell which | pass |
+| pos-07 | Every scan in the scene is labelled prepared data | pass |
+| pos-08 | The scene builder never names a verdict, the gate or the engine | pass |
+
+### Rebuy line follows the verdict
+
+| Case | Checks | Result |
+| --- | --- | --- |
+| rb-01 | Moved beyond noise, better | pass |
+| rb-02 | No detectable change | pass |
+| rb-03 | Not comparable | pass |
+| rb-04 | Several changes, even with better scores | pass |
+| rb-05 | No baseline | pass |
+| rb-06 | Itching with better scores: don't rebuy | pass |
+| rb-07 | Moved beyond noise, worse: never 'supports rebuying' | pass |
+| rb-08 | API: Meera supports; Riya lamp / day 14 / itching = can't tell / finish / don't rebuy | pass |
 
 ### LLM down or draft rejected: templates shown, core flow unaffected
 

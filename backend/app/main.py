@@ -10,6 +10,7 @@ import os
 import shutil
 import sqlite3
 import tempfile
+import threading
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -29,10 +30,11 @@ from . import evidence as E
 from . import guard as G
 from . import facecrop as F
 from . import llm as L
+from . import scenes as S
 from .fingerprint import Fingerprint, measure_normalised
 from .settings import flag
 from .youcam import (YouCamClient, YouCamError, actions_for_mode, check_unit_reserve, delete_task_quietly,
-                     download_masks, strip_urls, validate_actions)
+                     download_masks, scan_cost_from, strip_urls, validate_actions)
 
 log = logging.getLogger("dermos")
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -40,6 +42,9 @@ DB_PATH = Path(os.environ.get("DERMOS_DB", BACKEND_DIR / "dermos.db"))
 MEDIA_DIR = Path(os.environ.get("DERMOS_MEDIA", BACKEND_DIR / "media"))
 MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 CATALOG = D.load_catalog()
+# The app's default concern set: 4 SD concerns = the 9-unit price tier.
+DEFAULT_ACTIONS = ("redness", "acne", "texture", "pore")
+DEFAULT_UNIT_RESERVE = 200
 
 
 def demo_mode() -> bool:
@@ -48,9 +53,9 @@ def demo_mode() -> bool:
 
 def unit_reserve() -> float:
     try:
-        return float(os.environ.get("YOUCAM_UNIT_RESERVE", "100"))
+        return float(os.environ.get("YOUCAM_UNIT_RESERVE", str(DEFAULT_UNIT_RESERVE)))
     except ValueError:
-        return 100.0
+        return float(DEFAULT_UNIT_RESERVE)
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -58,6 +63,9 @@ async def lifespan(_app: FastAPI):
         seeded = seed_if_empty()
         if seeded:
             log.info("Seeded demo data: %s", ", ".join(seeded))
+        missing = [p for p in ("riya", "meera") if p not in demo.personas()]
+        if missing:
+            log.warning("Demo fixtures missing for: %s. The guided demo needs them.", ", ".join(missing))
     yield
 
 
@@ -80,7 +88,53 @@ def _db() -> sqlite3.Connection:
     con = sqlite3.connect(DB_PATH)
     for k in KINDS:
         con.execute(f"CREATE TABLE IF NOT EXISTS {k} (id TEXT PRIMARY KEY, body TEXT, created TEXT)")
+    # Live YouCam units spent through this server, for the judge caps. Not touched by demo reset.
+    con.execute("CREATE TABLE IF NOT EXISTS spend (id TEXT PRIMARY KEY, day TEXT, units REAL, state TEXT, at TEXT)")
     return con
+
+
+# ---------------------------------------------------------------- judge unit caps
+_SPEND_LOCK = threading.Lock()
+
+
+def _today() -> str:
+    return datetime.now(timezone.utc).date().isoformat()
+
+
+def units_spent() -> dict:
+    """Units counted against the caps: confirmed live scans plus scans in flight."""
+    with _db() as con:
+        total = con.execute("SELECT COALESCE(SUM(units), 0) FROM spend").fetchone()[0]
+        today = con.execute("SELECT COALESCE(SUM(units), 0) FROM spend WHERE day = ?", (_today(),)).fetchone()[0]
+    return {"total": float(total), "today": float(today)}
+
+
+def hold_units(units: float) -> tuple[str | None, str | None]:
+    """Count a live scan against the caps before it is sent. Returns (hold id, None) or
+    (None, cap reason) when this scan would go over JUDGE_UNIT_CAP_TOTAL or JUDGE_UNIT_CAP_DAILY."""
+    cap_total, cap_daily = G.judge_caps()
+    with _SPEND_LOCK:
+        spent = units_spent()
+        if spent["total"] + units > cap_total:
+            return None, "judge_cap_total"
+        if spent["today"] + units > cap_daily:
+            return None, "judge_cap_daily"
+        hid = uuid.uuid4().hex[:12]
+        with _db() as con:
+            con.execute("INSERT INTO spend VALUES (?, ?, ?, 'held', ?)",
+                        (hid, _today(), units, datetime.now(timezone.utc).isoformat()))
+        return hid, None
+
+
+def settle_units(hid: str | None, spent: bool) -> None:
+    """A scan that went through stays counted; one that failed (YouCam doesn't charge) is released."""
+    if not hid:
+        return
+    with _SPEND_LOCK, _db() as con:
+        if spent:
+            con.execute("UPDATE spend SET state = 'spent' WHERE id = ?", (hid,))
+        else:
+            con.execute("DELETE FROM spend WHERE id = ?", (hid,))
 
 
 def put(kind: str, body: dict, id: str | None = None) -> dict:
@@ -125,15 +179,24 @@ def seed_if_empty(persona: str = "riya") -> list[str]:
 
 
 # ---------------------------------------------------------------- basics
+@app.get("/health")
+def liveness():
+    """For the host's health check and the app's wake-up ping. No YouCam call, no database write."""
+    return {"ok": True}
+
+
 @app.get("/api/health")
 def health(x_live_passcode: str | None = Header(None)):
+    """What this caller gets. Never calls YouCam."""
     live = not demo_mode() and G.passcode_status(x_live_passcode) == "ok"
+    cap_total, cap_daily = G.judge_caps()
     return {"ok": True, "youcam_key": bool(os.environ.get("YOUCAM_API_KEY")),
             # demo_mode is what THIS caller gets: true unless their scans would really go to YouCam.
             "demo_mode": not live, "server_demo_mode": demo_mode(),
             "live_scans": G.live_scans_setting(), "passcode": G.passcode_status(x_live_passcode),
             "personas": demo.personas() if not live else {},
             "unit_reserve": unit_reserve(), "rules": [D.RULE_VERSION, E.RULE_VERSION],
+            "judge_caps": {"total": cap_total, "daily": cap_daily, "spent": units_spent()},
             # Only whether the optional language layer is on, never which key.
             "llm": L.get_provider() is not None}
 
@@ -265,7 +328,7 @@ def _media_url(path: Path) -> str:
 @app.post("/api/scan")
 async def scan(request: Request,
                image: UploadFile = File(...),
-               actions: str = Form("redness,texture,acne,pore,oiliness,moisture"),
+               actions: str = Form(",".join(DEFAULT_ACTIONS)),
                trial_id: str | None = Form(None),
                phase: Literal["baseline", "checkin", "free"] = Form("free"),
                face_ratio: float | None = Form(None), yaw: float | None = Form(None),
@@ -293,7 +356,7 @@ async def scan(request: Request,
         tmp.write(await image.read())
         path = tmp.name
     norm_path = None
-    source, replay_info, youcam = "live", None, None
+    source, replay_info, youcam, notice, hold = "live", None, None, None, None
     try:
         # Every capture is cropped and scaled the same way (app/facecrop.py) before it is measured
         # or sent, so distance from the camera doesn't change the comparison. One mode per trial.
@@ -316,6 +379,19 @@ async def scan(request: Request,
         need = 1080 if mode == "hd" else 480
         if fp.short_side < need:   # can't happen after normalisation; kept as a last check
             raise HTTPException(422, f"Photo short side is {fp.short_side}px; {mode.upper()} needs {need}px.")
+        client = cost = None
+        if want == "live":
+            try:
+                client = YouCamClient()
+            except YouCamError as e:
+                raise HTTPException(503, e.friendly)
+            cost = _scan_cost(client, acts) or scan_cost_from({}, client.version if hasattr(client, "version")
+                                                              else "v2.1", acts)[0]
+            # Judge caps: a live scan that would go over them replays prepared data instead.
+            hold, capped = hold_units(cost)
+            if capped:
+                want, replay_reason, notice = "replay", capped, G.cap_message(capped)
+                log.info("Live scan replayed instead: %s.", capped)
         if want == "replay":
             fset = fixture_set or ("baseline" if phase == "free" else phase)
             prior = [c for c in all_("captures") if c.get("source") == "replay"
@@ -331,16 +407,19 @@ async def scan(request: Request,
             masks = demo.copy_masks(rp, MEDIA_DIR / cap_id)
         else:
             try:
-                client = YouCamClient()
-                cost = _scan_cost(client, acts)
                 bal = check_unit_reserve(client, unit_reserve(), cost)
                 log.info("YouCam scan: %s %s concerns, cost %s units; balance %s (reserve %s).",
                          len(acts), mode.upper(), cost, bal, unit_reserve())
                 res = client.analyze(norm_path, acts)
             except YouCamError as e:
+                settle_units(hold, spent=False)
                 if e.code == "unit_reserve":
                     raise HTTPException(402, e.friendly)
                 raise HTTPException(502 if e.code not in (None, "no_key") else 503, e.friendly)
+            except Exception:
+                settle_units(hold, spent=False)
+                raise
+            settle_units(hold, spent=True)
             masks = download_masks(res, MEDIA_DIR / cap_id, getattr(client, "upload_http", None))
             # Masks are saved locally, so the copy at YouCam (photo + outputs) is no longer needed.
             youcam = {"task_id": res.task_id, "deleted": delete_task_quietly(client, res.task_id),
@@ -364,7 +443,7 @@ async def scan(request: Request,
         if base:
             comp = E.compare_conditions(base, [_to_capture(cap)])
             check = comp.to_dict()
-    return {"capture": cap, "comparability": check}
+    return {"capture": cap, "comparability": check, "notice": notice}
 
 
 def _youcam_task_id(c: dict) -> str | None:
@@ -614,6 +693,29 @@ def meta():
     return {"stop_symptoms": sorted(E.STOP_SYMPTOMS), "verdict_text": {v.value: m for v, m in E.VERDICT_TEXT.items()},
             "tolerances": E.TOLERANCES, "min_band": E.MIN_BAND, "capture": F.describe(),
             "record_types": [r.value for r in D.RecordType], "rules": [D.RULE_VERSION, E.RULE_VERSION]}
+
+
+def build_scene(name: str) -> dict:
+    """Write one guided-demo scene (app/scenes.py). The verdict comes from GET /evidence as usual."""
+    return S.build(name, put, all_, delete, CATALOG)
+
+
+@app.get("/api/demo/scenes")
+def demo_scenes():
+    return {"scenes": list(S.SCENES), "available": demo_mode()}
+
+
+@app.post("/api/demo/scene/{name}")
+def demo_scene(name: str):
+    """Load a prepared scene for the guided demo. Only in DEMO_MODE, where no units are ever spent."""
+    if not demo_mode():
+        raise HTTPException(403, "The guided demo runs only when the server is in demo mode.")
+    if name not in S.SCENES:
+        raise HTTPException(404, f"Unknown scene {name!r}")
+    try:
+        return build_scene(name)
+    except demo.FixtureError as e:
+        raise HTTPException(503, str(e))
 
 
 @app.post("/api/demo/reset")

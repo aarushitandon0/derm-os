@@ -1,24 +1,21 @@
-# Render blueprint for the derm//os API (FastAPI + SQLite). See docs/DEPLOY.md.
+# Render blueprint for the derm//os API (Docker image from backend/Dockerfile). See docs/DEPLOY.md.
 # Secrets use `sync: false`: Render asks for them in the dashboard; values never live in git.
 services:
   - type: web
     name: dermos-api
-    runtime: python
-    rootDir: backend
+    runtime: docker
     plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /api/health
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /health
     envVars:
-      - key: PYTHON_VERSION
-        value: "3.12.7"
-      # Public demo: replay recorded scans, spend no units.
+      # Public demo: replay prepared scans, spend no units. Live scans also need the passcode below.
       - key: DEMO_MODE
         value: "1"
-      # Fresh (ephemeral) database starts with the demo persona's routine.
+      # A fresh (ephemeral) database starts with the demo persona's routine.
       - key: DERMOS_SEED
         value: "1"
-      # SQLite and saved masks live on the instance disk; both reset on redeploy/restart.
+      # SQLite and saved masks live on the instance disk; both reset on every restart or redeploy.
       - key: DERMOS_DB
         value: /tmp/dermos.db
       - key: DERMOS_MEDIA
@@ -28,24 +25,21 @@ services:
         value: "1"
       - key: SCAN_RATE_LIMIT
         value: "30/600"
+      # Live scans: refuse when the balance minus the scan would drop below this.
       - key: YOUCAM_UNIT_RESERVE
+        value: "200"
+      # Live judge scans stop at these unit totals (counted in the database), then replay prepared data.
+      - key: JUDGE_UNIT_CAP_TOTAL
+        value: "300"
+      - key: JUDGE_UNIT_CAP_DAILY
         value: "100"
+      - key: LLM_PROVIDER
+        value: none
       # Set in the dashboard: your Vercel URL, e.g. https://<project>.vercel.app
       - key: CORS_ORIGINS
         sync: false
-      # Only needed if you ever turn DEMO_MODE to 0 for a live judge session.
+      # Only for a live judge session (with DEMO_MODE=0).
       - key: YOUCAM_API_KEY
         sync: false
       - key: LIVE_SCAN_PASSCODE
-        sync: false
-      # Optional LLM layer. "none" keeps it off; set to anthropic or openai_compatible plus the keys below.
-      - key: LLM_PROVIDER
-        value: none
-      - key: ANTHROPIC_API_KEY
-        sync: false
-      - key: LLM_BASE_URL
-        sync: false
-      - key: LLM_MODEL
-        sync: false
-      - key: LLM_API_KEY
         sync: false

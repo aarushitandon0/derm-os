@@ -220,7 +220,7 @@ class YouCamClient:
         raise YouCamError(f"{method} {path} kept failing after retries", code="retry_exhausted")
 
     def credit(self) -> dict[str, Any]:
-        """Unit balance. Endpoint used by other hackathon entries; tolerate shape changes."""
+        """Unit balance (free, read-only). The response shape isn't documented, so parse_balance() is tolerant."""
         return self._request("GET", "/s2s/v1.0/client/credit")
 
     def unit_balance(self) -> float | None:

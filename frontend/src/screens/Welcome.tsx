@@ -1,4 +1,5 @@
 import { Btn, Wordmark } from "../components/ui";
+import { NOT_DIAGNOSIS } from "../copy";
 
 // The hero is one replaceable file in frontend/public. Swap in your own image
 // (any format) and update this path if the name changes.
@@ -12,17 +13,19 @@ export default function Welcome() {
         <h1 className="welcome__mark">
           <Wordmark size="xl" />
         </h1>
-        <p className="welcome__tag">
-          Real changes.
-          <br />
-          Backed by evidence.
+        <p className="welcome__tag">Same face, same light, one change, honest verdict.</p>
+        <p className="welcome__sub">
+          Before you rebuy a skincare product, find out whether your skin changed more than it does on its own.
         </p>
       </div>
       <div className="welcome__bottom">
-        <Btn to="/start" wide icon="arrow">
-          Get started
+        <Btn to="/demo" wide icon="arrow">
+          Try the 90-second demo
         </Btn>
-        <p className="welcome__note">Decision support, not a diagnosis. No account needed.</p>
+        <Btn to="/start" kind="ghost" wide>
+          Start my own trial
+        </Btn>
+        <p className="welcome__note">{NOT_DIAGNOSIS} No account needed. All products are fictional.</p>
       </div>
     </div>
   );

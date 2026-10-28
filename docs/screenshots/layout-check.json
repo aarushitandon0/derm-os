@@ -1,0 +1,74 @@
+[
+  {
+    "name": "01-landing.png",
+    "sideways": false,
+    "scrollWidth": 390,
+    "small": []
+  },
+  {
+    "name": "02-guided-demo-start.png",
+    "sideways": false,
+    "scrollWidth": 390,
+    "small": []
+  },
+  {
+    "name": "03-guided-history.png",
+    "sideways": false,
+    "scrollWidth": 390,
+    "small": []
+  },
+  {
+    "name": "04-compare-blocked-inci.png",
+    "sideways": false,
+    "scrollWidth": 429,
+    "small": []
+  },
+  {
+    "name": "05-trial-baseline.png",
+    "sideways": false,
+    "scrollWidth": 390,
+    "small": []
+  },
+  {
+    "name": "07-not-comparable-reguide.png",
+    "sideways": false,
+    "scrollWidth": 390,
+    "small": []
+  },
+  {
+    "name": "08-evidence-riya-day14-rebuy.png",
+    "sideways": false,
+    "scrollWidth": 390,
+    "small": []
+  },
+  {
+    "name": "09-stop-card.png",
+    "sideways": false,
+    "scrollWidth": 390,
+    "small": []
+  },
+  {
+    "name": "10-visit-brief.png",
+    "sideways": false,
+    "scrollWidth": 390,
+    "small": []
+  },
+  {
+    "name": "11-evidence-meera-moved-rebuy.png",
+    "sideways": false,
+    "scrollWidth": 390,
+    "small": []
+  },
+  {
+    "name": "06-capture-simulated.png",
+    "sideways": false,
+    "scrollWidth": 390,
+    "small": []
+  },
+  {
+    "name": "06b-capture-warm-light-warning.png",
+    "sideways": false,
+    "scrollWidth": 390,
+    "small": []
+  }
+]

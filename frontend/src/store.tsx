@@ -1,9 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { api, type Health, type HistoryRecord, type Meta, type Product, type Trial } from "./api";
+import { api, ApiError, type Health, type HistoryRecord, type Meta, type Product, type Trial } from "./api";
 
 interface Store {
   ready: boolean;
   error: string | null;
+  /** The server didn't answer at all (asleep or down), as opposed to answering with an error. */
+  unreachable: boolean;
   health: Health | null;
   meta: Meta | null;
   catalog: Record<string, Product>;
@@ -24,6 +26,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     activeBaselineCount: 0,
     ready: false,
     error: null,
+    unreachable: false,
     health: null,
     meta: null,
     products: [],
@@ -46,9 +49,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const activeBaselineCount = active
         ? await api.evidence(active.id).then((e) => e.captures.baseline.length, () => 0)
         : 0;
-      setState({ ready: true, error: null, health, meta, products, shelf: shelf.product_ids, history, trials, activeBaselineCount });
+      setState({
+        ready: true,
+        error: null,
+        unreachable: false,
+        health,
+        meta,
+        products,
+        shelf: shelf.product_ids,
+        history,
+        trials,
+        activeBaselineCount,
+      });
     } catch (e) {
-      setState((s) => ({ ...s, ready: true, error: (e as Error).message }));
+      const unreachable = e instanceof ApiError && e.status === 0;
+      setState((s) => ({ ...s, ready: true, error: (e as Error).message, unreachable }));
     }
   }, []);
 

@@ -3,6 +3,9 @@ import { Loading, Notice, Wordmark } from "./components/ui";
 import { TabBar, type Tab } from "./components/TabBar";
 import { KEYS, readLocal } from "./local";
 import { useRoute } from "./router";
+import { GuideBar } from "./components/Guide";
+import { Waking } from "./components/Waking";
+import Demo from "./screens/Demo";
 import Brief from "./screens/Brief";
 import Capture from "./screens/Capture";
 import Checkin from "./screens/Checkin";
@@ -20,7 +23,7 @@ import Welcome from "./screens/Welcome";
 import { useStore } from "./store";
 
 export default function App() {
-  const { ready, error, health } = useStore();
+  const { ready, error, unreachable, health } = useStore();
   const { path, query } = useRoute();
 
   if (!ready)
@@ -32,6 +35,7 @@ export default function App() {
         </div>
       </div>
     );
+  if (error && unreachable) return <Waking />;
   if (error)
     return (
       <div className="app">
@@ -62,6 +66,10 @@ export default function App() {
       break;
     case "start":
       screen = <Intent />;
+      tab = "none";
+      break;
+    case "demo":
+      screen = <Demo step={Number(b ?? 0)} key={b ?? "0"} />;
       tab = "none";
       break;
     case "progress":
@@ -105,7 +113,7 @@ export default function App() {
       break;
     case "results":
     case "evidence": // older links
-      screen = <Results id={b} key={b} />;
+      screen = <Results id={b} key={b} tab={query.get("tab")} />;
       break;
     case "brief":
       screen = <Brief id={b} key={b ?? "latest"} />;
@@ -119,9 +127,10 @@ export default function App() {
     <div className={`app${tab === "none" ? "" : " app--tabbed"}`}>
       {health?.demo_mode && (
         <p className="demoflag" role="note">
-          Demo · scan scores are prepared data · all products are fictional
+          Prepared demo data · all products are fictional
         </p>
       )}
+      <GuideBar path={path} />
       {screen}
       {tab !== "none" && <TabBar active={tab} />}
     </div>

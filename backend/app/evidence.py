@@ -52,6 +52,49 @@ VERDICT_TEXT = {
     Verdict.MOVED: "Changed beyond your normal range during this trial.",
 }
 
+# The strongest result names what moved and adds this caveat. Never a cause.
+MOVED_CAVEAT = "This alone can't show the product was the reason: seasons, sleep and cycles move skin too."
+
+# How a move reads for each concern. YouCam raw scores are higher for healthier-looking skin, so
+# "better" means less redness or fewer breakouts, but more moisture or radiance.
+MOVE_WORDS = {
+    "redness": ("Redness dropped", "Redness rose"),
+    "acne": ("Breakouts dropped", "Breakouts rose"),
+    "pore": ("Pores looked smaller", "Pores looked larger"),
+    "texture": ("Texture looked smoother", "Texture looked rougher"),
+    "oiliness": ("Oiliness dropped", "Oiliness rose"),
+    "moisture": ("Moisture rose", "Moisture dropped"),
+    "radiance": ("Radiance rose", "Radiance dropped"),
+    "age_spot": ("Spots looked lighter", "Spots looked darker"),
+}
+
+
+def moved_sentence(concern: str, direction: str) -> str:
+    better, worse = MOVE_WORDS.get(concern, (f"The {concern.replace('_', ' ')} score rose",
+                                             f"The {concern.replace('_', ' ')} score dropped"))
+    return f"{better if direction == 'better' else worse} beyond your usual variation during this trial."
+
+
+# The rebuy line: the shopping decision, mapped strictly from the verdict (never from scores alone).
+REBUY = {
+    "supports": "The evidence supports rebuying, if you like using it.",
+    "finish": "Finish the trial before you rebuy.",
+    "cant_tell": "Can't tell yet, so this isn't a reason to rebuy.",
+    "stop": "Don't rebuy. If it persists, take the visit brief to a clinician.",
+    "moved_worse": "Scores moved the wrong way during this trial, so this isn't a reason to rebuy.",
+}
+
+
+def rebuy_line(verdict: "Verdict", findings: list["ConcernFinding"]) -> str:
+    if verdict == Verdict.STOP_REACTION:
+        return REBUY["stop"]
+    if verdict == Verdict.NO_CHANGE:
+        return REBUY["finish"]
+    if verdict == Verdict.MOVED:
+        moved = [f for f in findings if f.beyond_noise]
+        return REBUY["supports"] if moved and all(f.direction == "better" for f in moved) else REBUY["moved_worse"]
+    return REBUY["cant_tell"]   # no baseline, not comparable, several changes
+
 
 @dataclass
 class Capture:
@@ -236,10 +279,15 @@ class EvidenceReport:
     symptoms: list[str]
     rule_version: str = RULE_VERSION
 
+    @property
+    def rebuy(self) -> str:
+        return rebuy_line(self.verdict, self.findings)
+
     def to_dict(self) -> dict:
         return {
             "verdict": self.verdict.value,
             "message": self.message,
+            "rebuy": self.rebuy,
             "findings": [f.to_dict() for f in self.findings],
             "comparability": None if self.comparability is None else self.comparability.to_dict(),
             "symptoms": self.symptoms,
@@ -291,8 +339,7 @@ def evaluate(base: list[Capture], follow: list[Capture], ctx: TrialContext,
     msg = VERDICT_TEXT[v]
     if v == Verdict.MOVED:
         moved = [f for f in findings if f.beyond_noise]
-        parts = [f"{f.concern} looks {f.direction}" for f in moved]
-        msg += " " + "; ".join(parts) + ". This happened during the trial; it does not prove the product caused it."
+        msg = " ".join(moved_sentence(f.concern, f.direction) for f in moved) + " " + MOVED_CAVEAT
     if reported and v != Verdict.STOP_REACTION:
         msg += f" You also logged: {', '.join(reported)}. Keep an eye on it."
     return EvidenceReport(v, msg, findings, comp, reported)

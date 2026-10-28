@@ -7,7 +7,7 @@ const apiUrl = (path: string) => API_BASE + path;
 /** Server-relative media paths (saved YouCam masks) resolved against the API origin. */
 export const assetUrl = (u: string | undefined | null) => (u && u.startsWith("/") ? API_BASE + u : u ?? undefined);
 
-const UNREACHABLE = API_BASE
+export const UNREACHABLE = API_BASE
   ? "Can't reach the derm//os server. It may be waking up; try again in a minute."
   : "Can't reach the derm//os server. Is the backend running on port 8000?";
 
@@ -153,6 +153,8 @@ export interface Reaction {
 export interface Report {
   verdict: VerdictCode;
   message: string;
+  /** The rebuy decision, mapped strictly from the verdict by the backend (evidence.rebuy_line). */
+  rebuy: string;
   findings: Finding[];
   comparability: Comparability | null;
   symptoms: string[];
@@ -224,6 +226,8 @@ export interface Health {
   rules?: string[];
   /** Whether the optional language layer (intake + explanations) is on. */
   llm?: boolean;
+  /** Live judge scans stop at these YouCam unit totals, then replay prepared data. */
+  judge_caps?: { total: number; daily: number; spent: { total: number; today: number } };
 }
 
 export interface Proposal {
@@ -275,7 +279,8 @@ function detailText(body: any, status: number): string {
   return `Request failed (${status})`;
 }
 
-export type ScanResult = { capture: Capture; comparability: Comparability | null };
+// notice: a plain message when the server replayed prepared data instead of a live scan (unit caps).
+export type ScanResult = { capture: Capture; comparability: Comparability | null; notice?: string | null };
 
 // The scan as an XHR so the screen can follow the real upload, then the wait for the analysis.
 function scanRequest(body: FormData, onUploaded?: (fraction: number, done: boolean) => void): Promise<ScanResult> {
@@ -376,6 +381,8 @@ export const api = {
       youcam: { already_deleted: number; requested: number; deleted: number; failed: number; skipped_reason: string | null };
     }>("/api/captures", { method: "DELETE" }),
   demoReset: () => call<unknown>("/api/demo/reset", { method: "POST" }),
+  /** Guided demo: write one prepared scene (server demo mode only). */
+  demoScene: (name: string) => call<{ scene: string; trial_id: string | null }>(`/api/demo/scene/${name}`, { method: "POST" }),
   scan: (s: ScanInput, onUploaded?: (fraction: number, done: boolean) => void) => {
     const f = new FormData();
     f.append("image", s.image, "capture.jpg");
@@ -395,5 +402,6 @@ export const api = {
   },
 };
 
-export const DEFAULT_ACTIONS = ["redness", "texture", "acne", "pore", "oiliness", "moisture"];
+// 4 SD concerns: the 9-unit price tier. Same as the server default (app/main.py DEFAULT_ACTIONS).
+export const DEFAULT_ACTIONS = ["redness", "acne", "texture", "pore"];
 export const CONCERNS = DEFAULT_ACTIONS;

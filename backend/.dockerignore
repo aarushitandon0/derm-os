@@ -1,0 +1,15 @@
+# Never in the image: secrets, local data, raw results, photos, caches.
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+dermos.db
+media/
+results/
+photos/
+app/models/
+scripts/models/
+tests/

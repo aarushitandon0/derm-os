@@ -1,6 +1,7 @@
 #!/bin/sh
 # derm//os pre-commit: block photo files so a face photo can never be committed.
-# Allowed: illustrations in frontend/public/ and docs/design-reference.png.
+# Allowed: illustrations in frontend/public/, docs/design-reference.png, and app screenshots in
+# docs/screenshots/ (made by frontend/scripts/screenshots.mjs with the simulated camera: no faces).
 # Install: powershell -ExecutionPolicy Bypass -File scripts/install-hooks.ps1
 
 blocked=""
@@ -16,7 +17,7 @@ for f in $files; do
     *) continue ;;
   esac
   case "$f" in
-    frontend/public/*|docs/design-reference.png) continue ;;
+    frontend/public/*|docs/design-reference.png|docs/screenshots/*.png) continue ;;
   esac
   blocked="$blocked
   $f"

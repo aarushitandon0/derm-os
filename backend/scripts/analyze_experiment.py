@@ -3,28 +3,31 @@
 Runs on saved results only (no network, no units):
     python scripts/analyze_experiment.py                 # reads results/, updates results/report.md
     python scripts/analyze_experiment.py --results path  # another results folder
+    python scripts/analyze_experiment.py --no-change-prefix white --shift-prefix warm
 
 run_experiments.py calls this after a full live run (or --replay). Inputs, per photo:
     results/<cond>_<n>.json              the YouCam result (raw scores)
     results/<cond>_<n>.fingerprint.json  capture conditions of the normalised photo
-"window_*" photos are the no-change set; "lamp_*" photos are the same face under a warm lamp.
+"<no-change prefix>_*" photos (default window_*) are the no-change set; "<shift prefix>_*" photos
+(default lamp_*) are the same face under a different light. Only these two conditions are read.
+report.md names them by LABELS ("indoor white light", "warm light", ...), never by file prefix.
 
 What it computes (report.md section "False-change analysis"):
-  a) Noise: per concern, min/max/range over every window photo, and the median and max range
+  a) Noise: per concern, min/max/range over every no-change photo, and the median and max range
      over every 3-photo subset (the app's baseline is 3 scans).
-  b) A fixed-threshold rule (+-5 / +-4): over every window pair x concern, the % where the
+  b) A fixed-threshold rule (+-5 / +-4): over every no-change pair x concern, the % where the
      absolute score difference is bigger than 5 (and 4).
-  c) derm//os, PRE-REGISTERED: every split of the window photos into a 3-photo baseline and a
+  c) derm//os, PRE-REGISTERED: every split of the no-change photos into a 3-photo baseline and a
      disjoint 2-photo check-in, judged by the engine's own verdict function (app.evidence.evaluate,
      with the current TOLERANCES and MIN_BAND, unchanged). Per concern, the % of splits whose
      verdict is "moved beyond your noise". The first result is frozen in
      results/preregistered.json and never replaced; a later run with different constants is
      reported beside it as "after tuning on these same photos".
-  d) Lighting: per concern, the mean window-minus-lamp shift beside the 3-photo range, and the %
-     of window-vs-lamp photo pairs the comparability gate marks "not comparable".
+  d) Lighting: per concern, the mean no-change-minus-shift difference beside the 3-photo range, and
+     the % of no-change-vs-shift photo pairs the comparability gate marks "not comparable".
   e) One plain headline sentence, with n.
 
-Nothing is written unless there are at least 3 window and 2 lamp photos with results.
+Nothing is written unless there are at least 3 no-change and 2 shift photos with results.
 """
 from __future__ import annotations
 
@@ -46,7 +49,11 @@ from app import evidence as E  # noqa: E402  (module import: tests can watch E.e
 from app.fingerprint import Fingerprint  # noqa: E402
 from app.youcam import load_result  # noqa: E402
 
-NO_CHANGE, LAMP = "window", "lamp"
+NO_CHANGE, LAMP = "window", "lamp"     # default file prefixes (--no-change-prefix / --shift-prefix)
+# How each prefix is named in report.md. A prefix not listed is shown as itself.
+LABELS = {"window": "window light", "lamp": "warm lamp",
+          "white": "indoor white light", "warm": "warm light"}
+INDOOR = {"white", "warm"}             # prefixes shot indoors (report.md says "indoor light")
 MIN_WINDOW, MIN_LAMP = 3, 2
 BASELINE_N, CHECKIN_N = 3, 2           # the app's baseline and check-in sizes
 THRESHOLDS = (5.0, 4.0)
@@ -70,8 +77,14 @@ class Shot:
 
 # -- loading -------------------------------------------------------------------------------
 
-def load_shots(results: Path) -> list[Shot]:
-    """Every <cond>_<n>.json result in `results` that has a saved fingerprint, in name order."""
+def label(prefix: str) -> str:
+    """The report's name for a condition: "indoor white light", never the file prefix "white"."""
+    return LABELS.get(prefix, prefix)
+
+
+def load_shots(results: Path, conditions: tuple[str, ...] | None = None) -> list[Shot]:
+    """Every <cond>_<n>.json result in `results` that has a saved fingerprint, in name order.
+    With `conditions`, only results whose prefix is one of them (other shoots are left alone)."""
     legacy = set()
     marker = results / "legacy_palette.json"
     if marker.exists():
@@ -79,7 +92,7 @@ def load_shots(results: Path) -> list[Shot]:
     shots = []
     for p in sorted(results.glob("*.json")):
         m = _STEM.match(p.stem)
-        if not m or p.stem in legacy:
+        if not m or p.stem in legacy or (conditions is not None and m.group(1) not in conditions):
             continue
         fp_path = results / f"{p.stem}.fingerprint.json"
         if not fp_path.exists():
@@ -91,12 +104,12 @@ def load_shots(results: Path) -> list[Shot]:
     return shots
 
 
-def split(shots: list[Shot]) -> tuple[list[Shot], list[Shot]]:
-    window = [s for s in shots if s.cond == NO_CHANGE]
-    lamp = [s for s in shots if s.cond == LAMP]
+def split(shots: list[Shot], no_change: str = NO_CHANGE, shift: str = LAMP) -> tuple[list[Shot], list[Shot]]:
+    window = [s for s in shots if s.cond == no_change]
+    lamp = [s for s in shots if s.cond == shift]
     if len(window) < MIN_WINDOW or len(lamp) < MIN_LAMP:
-        raise AnalysisError(f"Needs at least {MIN_WINDOW} window and {MIN_LAMP} lamp photos with results; "
-                            f"found {len(window)} window and {len(lamp)} lamp. Nothing written.")
+        raise AnalysisError(f"Needs at least {MIN_WINDOW} {no_change} and {MIN_LAMP} {shift} photos with results; "
+                            f"found {len(window)} {no_change} and {len(lamp)} {shift}. Nothing written.")
     return window, lamp
 
 
@@ -223,13 +236,15 @@ def preregistration(results: Path, shots: list[Shot], current: dict) -> tuple[di
 
 # -- e) report -----------------------------------------------------------------------------
 
-def analyse(shots: list[Shot], results: Path) -> dict:
-    window, lamp = split(shots)
+def analyse(shots: list[Shot], results: Path, no_change: str = NO_CHANGE, shift: str = LAMP) -> dict:
+    window, lamp = split(shots, no_change, shift)
     concerns = shared_concerns(window + lamp)
     if not concerns:
-        raise AnalysisError("The window and lamp results share no concern. Nothing written.")
+        raise AnalysisError(f"The {no_change} and {shift} results share no concern. Nothing written.")
     nz = noise(window, concerns)
-    out = {"concerns": concerns, "noise": nz, "fixed_threshold": fixed_threshold(window, concerns),
+    out = {"concerns": concerns, "conditions": {"no_change": no_change, "shift": shift},
+           "labels": {"no_change": label(no_change), "shift": label(shift)},
+           "noise": nz, "fixed_threshold": fixed_threshold(window, concerns),
            "lighting": lighting(window, lamp, concerns, nz)}
     pre, tuned = preregistration(results, shots, dermos_false_change(window, concerns))
     out["dermos_preregistered"] = pre
@@ -238,32 +253,39 @@ def analyse(shots: list[Shot], results: Path) -> dict:
     return out
 
 
+def _labels(a: dict) -> tuple[str, str]:
+    lb = a.get("labels") or {}
+    return lb.get("no_change", label(NO_CHANGE)), lb.get("shift", label(LAMP))
+
+
 def headline(a: dict) -> str:
     ft, pre, li = a["fixed_threshold"], a["dermos_preregistered"], a["lighting"]
     five = ft["by_threshold"]["5"]
-    return (f"With nothing changed ({ft['n_photos']} photos of the same face, same window light, "
+    base, other = _labels(a)
+    return (f"With nothing changed ({ft['n_photos']} photos of the same face, same {base}, "
             f"{len(a['concerns'])} concern{'' if len(a['concerns']) == 1 else 's'}), a fixed ±5-point rule called a change in {five['pct']}% of "
             f"{five['n']} photo-pair comparisons; derm//os's pre-registered verdict said "
             f"\"moved beyond your noise\" in {pre['pct']}% of {pre['n']} baseline/check-in splits. "
-            f"Under a warm lamp, the comparability gate marked {li['pct_not_comparable']}% of "
-            f"{li['n_pairs']} window-vs-lamp photo pairs not comparable.")
+            f"Under {other} ({li['n_lamp']} photos), the comparability gate marked {li['pct_not_comparable']}% of "
+            f"{li['n_pairs']} {base} vs {other} photo pairs not comparable.")
 
 
 def markdown(a: dict) -> str:
     c = a["concerns"]
     ft, pre, tuned, li = a["fixed_threshold"], a["dermos_preregistered"], a["dermos_after_tuning"], a["lighting"]
+    base, other = _labels(a)
     L = [START, "## False-change analysis", "", f"**Headline:** {a['headline']}", "",
          "These comparisons share photos (every pair and every split reuses the same few scans), so they "
          "are not independent and the percentages are not error rates with confidence intervals. "
          "This analysis and the benchmark are ours (we wrote both), not an independent evaluation.", "",
-         f"### a) Noise with nothing changed (n={ft['n_photos']} window photos)", "",
+         f"### a) Noise with nothing changed (n={ft['n_photos']} {base} photos)", "",
          "| Concern | Min | Max | Range (all) | 3-photo range, median | 3-photo range, max |",
          "| --- | --- | --- | --- | --- | --- |"]
     L += [f"| {k} | {r['min']} | {r['max']} | {r['range']} | {r['subset3_median_range']} | {r['subset3_max_range']} |"
           for k, r in a["noise"].items()]
     L += ["", f"3-photo subsets per concern: {a['noise'][c[0]]['n_subsets3']} (the app's baseline is 3 scans).", "",
           f"### b) False changes under {FIXED_LABEL}", "",
-          f"Every pair of window photos ({ft['n_pairs']} pairs) x {len(c)} concerns. A pair counts as a "
+          f"Every pair of {base} photos ({ft['n_pairs']} pairs) x {len(c)} concerns. A pair counts as a "
           "false change when the scores differ by more than the threshold.", "",
           "| Threshold | " + " | ".join(c) + " | All |", "| --- | " + " | ".join("---" for _ in c) + " | --- |"]
     for t, row in ft["by_threshold"].items():
@@ -271,7 +293,7 @@ def markdown(a: dict) -> str:
                                             f"{row['per_concern'][k]['n']})" for k in c)
                  + f" | **{row['pct']}%** ({row['flagged']}/{row['n']}) |")
     L += ["", "### c) derm//os verdict, pre-registered", "",
-          f"Every split of the {pre['n_photos']} window photos into a 3-photo baseline and a disjoint 2-photo "
+          f"Every split of the {pre['n_photos']} {base} photos into a 3-photo baseline and a disjoint 2-photo "
           f"check-in ({pre['n_splits']} splits), judged by `app.evidence.evaluate` with rule set "
           f"{pre['rule_version']}, TOLERANCES {json.dumps(pre['tolerances'])} and MIN_BAND {pre['min_band']}, "
           "unchanged. A split counts as a false change when the verdict is \"moved beyond your noise\".", ""]
@@ -282,13 +304,13 @@ def markdown(a: dict) -> str:
               f"{tuned['min_band']}. These constants were chosen after seeing these photos, so this number "
               "is optimistic. The pre-registered number above is the one to quote.", ""]
         L += _verdict_table(tuned, c)
-    L += ["", f"### d) Lighting: window vs warm lamp (n={li['n_window']} vs {li['n_lamp']})", "",
-          "| Concern | Mean shift (window - lamp) | 3-photo range, median | 3-photo range, max | Shift bigger than max range |",
+    L += ["", f"### d) Lighting: {base} vs {other} (n={li['n_window']} vs {li['n_lamp']})", "",
+          f"| Concern | Mean shift ({base} - {other}) | 3-photo range, median | 3-photo range, max | Shift bigger than max range |",
           "| --- | --- | --- | --- | --- |"]
     L += [f"| {k} | {r['mean_shift_window_minus_lamp']:+} | {r['subset3_median_range']} | {r['subset3_max_range']} | "
           f"{'yes' if r['shift_beyond_max_range'] else 'no'} |" for k, r in li["per_concern"].items()]
     fields = ", ".join(f"{f} {n}" for f, n in sorted(li["failed_fields"].items())) or "none"
-    L += ["", f"Comparability gate on every window-vs-lamp photo pair: **{li['pct_not_comparable']}% not comparable** "
+    L += ["", f"Comparability gate on every {base} vs {other} photo pair: **{li['pct_not_comparable']}% not comparable** "
               f"({li['not_comparable']}/{li['n_pairs']}). Failed checks: {fields}.", "", END]
     return "\n".join(L) + "\n"
 
@@ -316,9 +338,9 @@ def write(results: Path, a: dict) -> Path:
     return md_path
 
 
-def run(results: Path, log=print) -> int:
+def run(results: Path, log=print, no_change: str = NO_CHANGE, shift: str = LAMP) -> int:
     try:
-        a = analyse(load_shots(results), results)
+        a = analyse(load_shots(results, (no_change, shift)), results, no_change, shift)
     except AnalysisError as e:
         log(f"False-change analysis not written: {e}")
         return 1
@@ -334,7 +356,12 @@ def run(results: Path, log=print) -> int:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--results", default=str(BACKEND_DIR / "results"))
-    return run(Path(ap.parse_args(argv).results))
+    ap.add_argument("--no-change-prefix", default=NO_CHANGE,
+                    help=f"file prefix of the no-change photos (default {NO_CHANGE})")
+    ap.add_argument("--shift-prefix", default=LAMP,
+                    help=f"file prefix of the photos under a different light (default {LAMP})")
+    args = ap.parse_args(argv)
+    return run(Path(args.results), no_change=args.no_change_prefix, shift=args.shift_prefix)
 
 
 if __name__ == "__main__":

@@ -5,9 +5,14 @@ Experiment 1 (noise floor): 5 photos, same face, same light, same phone,
 Experiment 2 (lighting):  3 photos by a window + 3 under a warm lamp, same
   session.                         -> how much a light change alone moves scores.
 
-Name your photos by condition, then a number (JPEG or PNG straight from the phone):
+Name your photos by condition, then a number (JPEG, PNG or HEIC straight from the phone; the
+extension is matched case-insensitively):
     photos/window_1.jpg ... window_5.jpg   (Experiment 1 + baseline for 2)
     photos/lamp_1.jpg   ... lamp_3.jpg     (Experiment 2)
+Other prefixes: --no-change-prefix white --shift-prefix warm reads white_N / warm_N instead.
+Only those two conditions are read; report.md names them "indoor white light" / "warm light"
+(analyze_experiment.LABELS), never by file prefix. HEIC is decoded by the app's own path
+(pillow-heif, registered once in app/photometa.py) to upright 8-bit RGB.
 
 Every photo goes through the app's own crop and scale (app/facecrop.py, one code path):
 3:4 around the single detected face, face width 75% of the crop, scaled DOWN so the face
@@ -22,6 +27,7 @@ Usage (from backend/; the key is read from backend/.env):
     python scripts/run_experiments.py ../photos --replay         # recompute from saved results, no API calls
     python scripts/run_experiments.py ../photos --only window_1  # pilot: one photo, balance before and after
     python scripts/run_experiments.py ../photos --skip-done      # full run; the pilot's result is reused
+    python scripts/run_experiments.py ../photos --no-change-prefix white --shift-prefix warm --dry-run
 
 Only photos directly in the folder are used: subfolders (photos/spare/, photos/normalised/) are
 ignored entirely. --actions takes YouCam SD concern names only (validated before any call).
@@ -71,7 +77,8 @@ from dataclasses import dataclass, field  # noqa: E402
 from statistics import mean  # noqa: E402
 from typing import Any, Callable  # noqa: E402
 
-from app import facecrop as F  # noqa: E402
+from app import facecrop as F  # noqa: E402  (imports app.photometa, which registers the HEIC decoder)
+from app import photometa as P  # noqa: E402
 from app.evidence import Capture, compare_conditions, noise_summary, ranges  # noqa: E402
 from app.fingerprint import Fingerprint, measure_normalised  # noqa: E402
 from app.youcam import (IMAGE_ERRORS, SD_ACTIONS, YouCamClient, YouCamError, actions_for_mode,  # noqa: E402
@@ -80,8 +87,11 @@ from app.youcam import (IMAGE_ERRORS, SD_ACTIONS, YouCamClient, YouCamError, act
 from scripts import analyze_experiment  # noqa: E402
 
 DEFAULT_CONCERNS = ["redness", "acne", "texture", "pore"]   # same 4 as the app (SD, 9 units each)
-IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png")
+IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".heic", ".heif")  # compared lower-case
+HEIF_SUFFIXES = (".heic", ".heif")
 LEGACY_MARKER = "legacy_palette.json"
+ONE_SITTING_MINUTES = 60   # report.md says "one sitting" only when every EXIF time is within this span
+label = analyze_experiment.label
 
 
 def group_photos(folder: Path) -> dict[str, list[Path]]:
@@ -95,8 +105,28 @@ def group_photos(folder: Path) -> dict[str, list[Path]]:
     return dict(groups)
 
 
+def keep_conditions(groups: dict[str, list[Path]], conditions: tuple[str, ...]) -> tuple[dict[str, list[Path]], list[str]]:
+    """Only the experiment's two conditions (file order kept). Returns (kept, ignored names)."""
+    kept = {c: v for c, v in groups.items() if c in conditions}
+    return kept, sorted(c for c in groups if c not in conditions)
+
+
 def sha256_file(path: Path) -> str:
     return F.sha256_bytes(Path(path).read_bytes())
+
+
+def source_bit_depth(path: Path) -> int | None:
+    """Bits per channel stored in the file (before the app converts it to 8-bit RGB).
+    HEIC is asked without the decoder's 8-bit conversion, so a 10-bit photo reports 10."""
+    try:
+        if path.suffix.lower() in HEIF_SUFFIXES:
+            import pillow_heif
+            return int(pillow_heif.open_heif(str(path), convert_hdr_to_8bit=False).info.get("bit_depth") or 0) or None
+        from PIL import Image
+        with Image.open(path) as im:
+            return 16 if im.mode.startswith("I;16") or im.mode in ("I", "RGB;16") else 8
+    except Exception:  # noqa: BLE001 - informational only; decoding itself is checked by open_upright
+        return None
 
 
 # -- normalisation (the app's code path) ---------------------------------------------------
@@ -113,6 +143,8 @@ class Prepared:
     png: bytes | None = None            # exactly what YouCam receives
     info: dict = field(default_factory=dict)
     fp: Fingerprint | None = None
+    meta: P.ExifMeta | None = None      # EXIF capture time and camera label (the app's own reader)
+    bit_depth: int | None = None        # bits per channel in the file, before the 8-bit RGB decode
 
     @property
     def ok(self) -> bool:
@@ -126,6 +158,8 @@ def prepare(groups: dict[str, list[Path]], detect: F.Detector, want_hd: bool) ->
     for cond, photos in groups.items():
         for p in photos:
             it = Prepared(p, cond, sha256_file(p))
+            it.meta = P.read_meta(p.read_bytes())
+            it.bit_depth = source_bit_depth(p)
             try:
                 img, it.notes = F.open_upright(str(p))
                 it.notes["size"] = list(img.size)
@@ -174,24 +208,29 @@ def print_preparation(items: list[Prepared], mode: str, why: str, log: Callable 
     ow, oh = F.OUTPUT[mode]
     log(f"\nNormalisation ({F.NORMALISE_VERSION}, same code as the app): 3:4 crop centred on the face, "
         f"face width {F.FACE_FRAC:.0%} of the crop, scaled down to a {target}px face -> {ow}x{oh} ({mode.upper()}; {why}).")
-    log(f"  {'photo':16s} {'original':>11s} {'mode':>5s} {'faces':>5s} {'face px':>8s} {'face %':>7s} "
-        f"{'scale':>6s} {'out':>9s} {'light':>6s} {'warmth':>7s}  note")
+    log(f"  {'photo':16s} {'original':>11s} {'mode':>5s} {'bits':>4s} {'faces':>5s} {'face px':>8s} {'face %':>7s} "
+        f"{'% after':>7s} {'scale':>6s} {'out':>9s} {'light':>6s} {'warmth':>7s} {'EXIF time':>9s}  note")
     for it in items:
         size = "x".join(str(v) for v in it.notes.get("size", [])) or "-"
         src_mode = it.notes.get("source_mode", "?")
+        bits = str(it.bit_depth) if it.bit_depth else "?"
+        when = it.meta.taken_at.strftime("%H:%M:%S") if it.meta and it.meta.taken_at else "none"
         if not it.ok:
-            log(f"  {it.path.name:16s} {size:>11s} {src_mode:>5s} {it.n_faces:>5d} "
-                f"{(f'{it.face.w:.0f}' if it.face else '-'):>8s} {'-':>7s} {'-':>6s} {'-':>9s} {'-':>6s} {'-':>7s}"
-                f"  REFUSED: {F.REFUSALS.get(it.refusal, it.refusal)}")
+            log(f"  {it.path.name:16s} {size:>11s} {src_mode:>5s} {bits:>4s} {it.n_faces:>5d} "
+                f"{(f'{it.face.w:.0f}' if it.face else '-'):>8s} {'-':>7s} {'-':>7s} {'-':>6s} {'-':>9s} {'-':>6s} {'-':>7s}"
+                f" {when:>9s}  REFUSED: {F.REFUSALS.get(it.refusal, it.refusal)}")
             continue
         note = []
         if it.info["clamped"]:
             note.append("shifted to fit")
         if it.notes.get("exif_orientation", 1) != 1:
             note.append(f"EXIF orientation {it.notes['exif_orientation']} read")
-        log(f"  {it.path.name:16s} {size:>11s} {src_mode:>5s} {it.n_faces:>5d} {it.info['face_px_original']:>8.0f} "
-            f"{it.info['face_pct_original']:>7.1f} {it.info['scale']:>6.3f} {f'{ow}x{oh}':>9s} "
-            f"{it.fp.luminance:>6.2f} {it.fp.red_blue_ratio:>7.2f}  {', '.join(note)}")
+        if it.bit_depth and it.bit_depth > 8:
+            note.append(f"{it.bit_depth}-bit file decoded to 8-bit RGB")
+        after = 100.0 * it.info["target_face_px"] / it.info["output"][0]
+        log(f"  {it.path.name:16s} {size:>11s} {src_mode:>5s} {bits:>4s} {it.n_faces:>5d} {it.info['face_px_original']:>8.0f} "
+            f"{it.info['face_pct_original']:>7.1f} {after:>7.1f} {it.info['scale']:>6.3f} {f'{ow}x{oh}':>9s} "
+            f"{it.fp.luminance:>6.3f} {it.fp.red_blue_ratio:>7.3f} {when:>9s}  {', '.join(note)}")
     for it in items:
         if it.notes.get("reduced_colour"):
             log(f"\n  WARNING: {it.path.name} is a reduced-colour image (mode {it.notes['source_mode']}"
@@ -414,10 +453,47 @@ def thin_conditions(groups: dict[str, list[Path]]) -> str | None:
             + ", ".join(f"{c} has {n}" for c, n in thin.items()) + ".")
 
 
-def method_lines(items: list[Prepared], mode: str, legacy: set[str]) -> list[str]:
+def setup_line(items: list[Prepared], no_change: str, shift: str) -> str:
+    """One sitting? which light? n per condition? same phone? Every part is read from the photos'
+    own EXIF (via app.photometa.read_meta); a part that can't be shown is stated as unknown."""
+    base, other = label(no_change), label(shift)
+    parts = []
+    times = [it.meta.taken_at if it.meta else None for it in items]
+    if items and all(times):
+        span = (max(times) - min(times)).total_seconds() / 60
+        when = (f"one sitting (EXIF capture times span {span:.0f} minutes)" if span <= ONE_SITTING_MINUTES
+                else f"not one sitting: EXIF capture times span {span:.0f} minutes")
+        nc = [it.meta.taken_at for it in items if it.cond == no_change]
+        sh = [it.meta.taken_at for it in items if it.cond == shift]
+        if nc and sh:
+            when += (f", every {base} photo taken before every {other} photo" if max(nc) < min(sh) else
+                     f", {base} and {other} photos interleaved in time")
+        parts.append(when)
+    else:
+        parts.append(f"capture time not recorded on {sum(t is None for t in times)} of {len(items)} photos")
+    if no_change in analyze_experiment.INDOOR and shift in analyze_experiment.INDOOR:
+        parts.append("indoor light")
+    counts = defaultdict(int)
+    for it in items:
+        counts[it.cond] += 1
+    parts.append(", ".join(f"n={counts[c]} {label(c)}" for c in (no_change, shift) if counts[c]))
+    devices = {it.meta.device if it.meta else None for it in items}
+    if len(devices) == 1 and None not in devices:
+        parts.append("same phone (one EXIF camera model on every photo)")
+    else:
+        parts.append(f"camera: {len(devices - {None})} EXIF model(s), not recorded on "
+                     f"{sum(1 for it in items if not (it.meta and it.meta.device))} photo(s)")
+    return "Setup: " + "; ".join(parts) + "."
+
+
+def method_lines(items: list[Prepared], mode: str, legacy: set[str],
+                 no_change: str | None = None, shift: str | None = None) -> list[str]:
     target = F.TARGET_FACE_PX[mode]
     ow, oh = F.OUTPUT[mode]
-    lines = ["## Method", "",
+    lines = ["## Method", ""]
+    if no_change and shift:
+        lines += [setup_line(items, no_change, shift), ""]
+    lines += [
              f"Every photo was cropped and scaled the same way, by the app's own code ({F.NORMALISE_VERSION}, "
              f"app/facecrop.py): a 3:4 crop centred on the single detected face with the face at "
              f"{F.FACE_FRAC:.0%} of the crop width, then scaled down so the face is **{target} px** wide "
@@ -440,6 +516,7 @@ def method_lines(items: list[Prepared], mode: str, legacy: set[str]) -> list[str
 def build_report(run: ScanRun, mode: str, actions: list[str], baseline: str, log: Callable = print) -> dict:
     base = run.captures.get(baseline, [])
     report = {"mode": mode, "actions": actions, "baseline_condition": baseline,
+              "labels": {c: label(c) for c in run.captures},
               "normalisation": {**F.describe(), "target_face_px": F.TARGET_FACE_PX[mode],
                                 "output": list(F.OUTPUT[mode])},
               "n": {c: len(v) for c, v in run.captures.items()},
@@ -472,16 +549,19 @@ def build_report(run: ScanRun, mode: str, actions: list[str], baseline: str, log
 
 def report_markdown(report: dict, method: list[str]) -> str:
     mode, baseline = report["mode"], report["baseline_condition"]
+    names = report.get("labels") or {}
+    base = names.get(baseline, label(baseline))
     n_base = report["n"].get(baseline, 0)
     lines = [f"# derm//os experiments ({mode.upper()})", "", *method,
-             f"## Experiment 1: {n_base} scans, nothing changed", "",
+             f"## Experiment 1: {n_base} scans, nothing changed ({base})", "",
              "| Concern | Min | Max | Range | Mean |", "| --- | --- | --- | --- | --- |"]
     lines += [f"| {k} | {s['min']} | {s['max']} | {s['range']} | {s['mean']} |"
               for k, s in report["experiment_1"].items()]
     for cond, r in report["experiment_2"].items():
-        lines += ["", f"## Experiment 2: {baseline} vs {cond} (n={n_base} vs {report['n'].get(cond, 0)})", "",
+        other = names.get(cond, label(cond))
+        lines += ["", f"## Experiment 2: {base} vs {other} (n={n_base} vs {report['n'].get(cond, 0)})", "",
                   f"Gate: {'comparable' if r['gate_comparable'] else 'NOT comparable: ' + ' '.join(r['gate_reasons'])}",
-                  "", f"| Concern | {baseline} mean | {cond} mean | Shift | {baseline} range | {cond} range | Beyond noise |",
+                  "", f"| Concern | {base} mean | {other} mean | Shift | {base} range | {other} range | Beyond noise |",
                   "| --- | --- | --- | --- | --- | --- | --- |"]
         lines += [f"| {k} | {v['baseline_mean']} | {v['condition_mean']} | {v['shift']:+} | {v['baseline_range']} | "
                   f"{v['condition_range']} | {'yes' if v['beyond_noise'] else 'no'} |" for k, v in r["concerns"].items()]
@@ -500,7 +580,10 @@ def write_report(out: Path, report: dict, markdown: str) -> None:
 def main(argv: list[str] | None = None, detect: F.Detector | None = None, client: Any = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("folder")
-    ap.add_argument("--baseline", default="window", help="condition name used for Experiment 1")
+    ap.add_argument("--no-change-prefix", "--baseline", dest="baseline", default=analyze_experiment.NO_CHANGE,
+                    help="file prefix of the no-change photos, Experiment 1 (default window)")
+    ap.add_argument("--shift-prefix", default=analyze_experiment.LAMP,
+                    help="file prefix of the photos under a different light, Experiment 2 (default lamp)")
     ap.add_argument("--actions", "--concerns", dest="actions", default=",".join(DEFAULT_CONCERNS),
                     help="comma-separated concerns (SD names; --hd maps them to HD)")
     ap.add_argument("--hd", action="store_true", help="HD, only if every photo can reach HD without upscaling")
@@ -527,9 +610,18 @@ def main(argv: list[str] | None = None, detect: F.Detector | None = None, client
     if not folder.is_dir():
         print(f"No folder {folder}")
         return 1
+    if args.baseline == args.shift_prefix:
+        print("--no-change-prefix and --shift-prefix must differ. Nothing sent.")
+        return 1
     groups = group_photos(folder)
     if not groups:
-        print(f"No .jpg/.png photos found in {folder}")
+        print(f"No .jpg/.png/.heic photos found in {folder}")
+        return 1
+    groups, ignored = keep_conditions(groups, (args.baseline, args.shift_prefix))
+    if ignored:
+        print(f"Ignored (not {args.baseline}_N or {args.shift_prefix}_N): {', '.join(ignored)}")
+    if not groups:
+        print(f"No photos named {args.baseline}_N or {args.shift_prefix}_N in {folder}. Nothing sent.")
         return 1
     pilot = args.only is not None
     if pilot:
@@ -647,10 +739,11 @@ def main(argv: list[str] | None = None, detect: F.Detector | None = None, client
         return 1
 
     report = build_report(run, mode, actions, args.baseline)
-    write_report(out, report, report_markdown(report, method_lines(items, mode, legacy)))
+    write_report(out, report, report_markdown(report, method_lines(items, mode, legacy,
+                                                                   args.baseline, args.shift_prefix)))
     print(f"\nSaved {out/'report.md'} and {out/'report.json'}")
     # The headline number: false changes under each rule, read back from the saved results.
-    analyze_experiment.run(out)
+    analyze_experiment.run(out, no_change=args.baseline, shift=args.shift_prefix)
     return 0
 
 

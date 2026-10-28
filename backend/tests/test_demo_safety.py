@@ -11,6 +11,8 @@ from PIL import Image
 from app.youcam import (UnitReserveError, check_unit_reserve, download_masks, normalize,
                         parse_balance)
 
+LIVE = {"X-Live-Passcode": "test-passcode"}  # live scans need it; see app/guard.py
+
 PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 64
 
 
@@ -58,7 +60,7 @@ def test_demo_mode_replays_fixtures_in_rotation_without_calling_youcam(app_modul
     def boom(*a, **k):
         raise AssertionError("YouCam must not be called in DEMO_MODE")
     monkeypatch.setattr(m, "YouCamClient", boom)
-    c = TestClient(m.app)
+    c = TestClient(m.app, headers=LIVE)
 
     caps = [scan(c, trial_id="t1", phase="baseline").json()["capture"] for _ in range(4)]
     assert [x["raw_scores"]["redness"] for x in caps] == [60.0, 62.0, 61.0, 60.0]
@@ -75,7 +77,7 @@ def test_demo_mode_explicit_set_and_missing_persona(app_module, tmp_path, monkey
     m = app_module
     monkeypatch.setenv("DEMO_MODE", "1")
     write_fixture(tmp_path / "fixtures", "riya", "lamp", "l1", 54.0)
-    c = TestClient(m.app)
+    c = TestClient(m.app, headers=LIVE)
     r = scan(c, phase="checkin", trial_id="t", fixture_set="lamp").json()
     assert r["capture"]["raw_scores"]["redness"] == 54.0 and r["capture"]["replay"]["set"] == "lamp"
 
@@ -84,7 +86,7 @@ def test_demo_mode_explicit_set_and_missing_persona(app_module, tmp_path, monkey
     assert scan(c, phase="baseline", persona="../etc").status_code == 503
 
 
-def test_live_mode_is_default(app_module, monkeypatch):
+def test_live_mode_with_passcode(app_module, monkeypatch):
     m = app_module
     called = []
 
@@ -98,7 +100,7 @@ def test_live_mode_is_default(app_module, monkeypatch):
                 {"type": "redness", "raw_score": 70, "ui_score": 80}]}}}, "sd", actions, "T")
 
     monkeypatch.setattr(m, "YouCamClient", lambda: Fake())
-    r = scan(TestClient(m.app)).json()
+    r = scan(TestClient(m.app, headers=LIVE)).json()
     assert called and r["capture"]["source"] == "live" and r["capture"]["replay"] is None
 
 
@@ -145,7 +147,7 @@ def test_scan_blocked_by_guard_never_calls_analyze(app_module, monkeypatch):
         def analyze(self, *a):
             raise AssertionError("must not spend units below reserve")
     monkeypatch.setattr(m, "YouCamClient", lambda: Low(120))
-    r = scan(TestClient(m.app))
+    r = scan(TestClient(m.app, headers=LIVE))
     assert r.status_code == 402 and "150" in r.json()["detail"]
 
 
@@ -157,7 +159,7 @@ def test_scan_continues_when_credit_call_fails(app_module, monkeypatch):
             return normalize({"data": {"results": {"output": [
                 {"type": "redness", "raw_score": 70}]}}}, "sd", actions, "T")
     monkeypatch.setattr(m, "YouCamClient", lambda: Flaky(exc=RuntimeError("500")))
-    assert scan(TestClient(m.app)).status_code == 200
+    assert scan(TestClient(m.app, headers=LIVE)).status_code == 200
 
 
 # ---------------------------------------------------------------- masks
@@ -196,7 +198,7 @@ def test_live_scan_stores_local_mask_paths(app_module, monkeypatch):
                 {"type": "redness", "raw_score": 70, "mask_urls": ["https://s3.example/r.png"]}]}}},
                 "sd", actions, "T")
     monkeypatch.setattr(m, "YouCamClient", lambda: Live(1000))
-    c = TestClient(m.app)
+    c = TestClient(m.app, headers=LIVE)
     cap = scan(c).json()["capture"]
     url = cap["masks"]["redness"][0]
     assert url == f"/media/{cap['id']}/redness_0.png"

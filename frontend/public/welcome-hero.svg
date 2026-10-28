@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 390 844" preserveAspectRatio="xMidYMid slice">
+  <!-- Abstract placeholder for the welcome hero. Replace this file with your own image
+       (keep the name, or change WELCOME_HERO in src/screens/Welcome.tsx). -->
+  <rect width="390" height="844" fill="#E9E2D6"/>
+  <circle cx="330" cy="420" r="260" fill="#E2D6C8"/>
+  <circle cx="300" cy="470" r="190" fill="#DCCBB9"/>
+  <circle cx="90" cy="760" r="170" fill="#E5DDD0"/>
+  <ellipse cx="262" cy="452" rx="104" ry="138" fill="none" stroke="#FBF8F2" stroke-width="2"/>
+  <line x1="262" y1="298" x2="262" y2="606" stroke="#FBF8F2" stroke-width="1.5" opacity="0.85"/>
+  <line x1="142" y1="452" x2="382" y2="452" stroke="#FBF8F2" stroke-width="1.5" opacity="0.85"/>
+  <rect x="96" y="560" width="132" height="10" rx="5" fill="#D3A895" opacity="0.9"/>
+  <rect x="120" y="580" width="84" height="10" rx="5" fill="#CFC5B6"/>
+</svg>

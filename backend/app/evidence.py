@@ -97,6 +97,14 @@ class Comparability:
     comparable: bool
     reasons: list[str] = field(default_factory=list)   # human-readable mismatches
     fixes: list[str] = field(default_factory=list)     # what to do on the retake
+    # Structured view of the same result, for the capture-quality screen:
+    # which fields had data on both sides, and each mismatch with its own fix.
+    checked: list[str] = field(default_factory=list)
+    failed: list[dict] = field(default_factory=list)   # {"field", "reason", "fix"}
+
+    def to_dict(self) -> dict:
+        return {"comparable": self.comparable, "reasons": self.reasons, "fixes": self.fixes,
+                "checked": self.checked, "failed": self.failed}
 
 
 def _avg(vals):
@@ -105,10 +113,16 @@ def _avg(vals):
 
 
 def compare_conditions(base: list[Capture], follow: list[Capture], tol: dict = TOLERANCES) -> Comparability:
-    reasons, fixes = [], []
+    reasons, fixes, checked, failed = [], [], [], []
+
+    def miss(field_name: str, reason: str, fix: str) -> None:
+        reasons.append(reason)
+        fixes.append(fix)
+        failed.append({"field": field_name, "reason": reason, "fix": fix})
+
+    checked.append("mode")
     if {c.mode for c in base} != {c.mode for c in follow} or len({c.mode for c in base + follow}) > 1:
-        reasons.append("Scans used different analysis modes (SD vs HD).")
-        fixes.append("Use the same scan mode as your baseline.")
+        miss("mode", "Scans used different analysis modes (SD vs HD).", "Use the same scan mode as your baseline.")
     b_act = {tuple(sorted(c.actions)) for c in base}
     f_act = {tuple(sorted(c.actions)) for c in follow}
     if b_act and f_act and b_act != f_act:
@@ -119,44 +133,54 @@ def compare_conditions(base: list[Capture], follow: list[Capture], tol: dict = T
     ff = [c.fingerprint for c in follow]
 
     bl, fl = _avg([f.luminance for f in bf]), _avg([f.luminance for f in ff])
-    if bl is not None and fl is not None and abs(bl - fl) > tol["luminance"]:
-        reasons.append(f"Brightness differs ({bl:.2f} vs {fl:.2f}).")
-        fixes.append("Stand in the same spot and light as your baseline." if fl < bl else
-                     "The light is much brighter than your baseline; move out of direct light.")
-
     brb, frb = _avg([f.red_blue_ratio for f in bf]), _avg([f.red_blue_ratio for f in ff])
+    if (bl is not None and fl is not None) or (brb and frb):
+        checked.append("lighting")
+    if bl is not None and fl is not None and abs(bl - fl) > tol["luminance"]:
+        miss("lighting", f"Brightness differs ({bl:.2f} vs {fl:.2f}).",
+             "Stand in the same spot and light as your baseline." if fl < bl else
+             "The light is much brighter than your baseline; move out of direct light.")
+
     if brb and frb and abs(brb - frb) / brb > tol["red_blue_ratio"]:
         warmer = frb > brb
-        reasons.append(f"Light colour differs: this light is {'warmer' if warmer else 'cooler'} than your baseline.")
-        fixes.append("Use the same light source as your baseline (e.g. daylight from a window, not a warm lamp).")
+        miss("lighting", f"Light colour differs: this light is {'warmer' if warmer else 'cooler'} than your baseline.",
+             "Use the same light source as your baseline (e.g. daylight from a window, not a warm lamp).")
 
     bfr, ffr = _avg([f.face_ratio for f in bf]), _avg([f.face_ratio for f in ff])
-    if bfr is not None and ffr is not None and abs(bfr - ffr) > tol["face_ratio"]:
-        reasons.append("Your face fills a different share of the frame.")
-        fixes.append("Hold the phone at the same distance: match the face outline.")
+    if bfr is not None and ffr is not None:
+        checked.append("face_size")
+        if abs(bfr - ffr) > tol["face_ratio"]:
+            miss("face_size", "Your face fills a different share of the frame.",
+                 "Hold the phone at the same distance: match the face outline.")
 
+    pose_checked = False
     for axis in ("yaw", "pitch", "roll"):
         ba, fa = _avg([getattr(f, axis) for f in bf]), _avg([getattr(f, axis) for f in ff])
-        if ba is not None and fa is not None and abs(ba - fa) > tol["angle"]:
-            reasons.append(f"Head angle differs ({axis}).")
-            fixes.append("Look straight into the camera.")
-            break
+        if ba is not None and fa is not None:
+            pose_checked = True
+            if abs(ba - fa) > tol["angle"]:
+                miss("head_pose", f"Head angle differs ({axis}).", "Look straight into the camera.")
+                break
+    if pose_checked:
+        checked.append("head_pose")
 
     bdev = {f.device for f in bf if f.device}
     fdev = {f.device for f in ff if f.device}
-    if bdev and fdev and bdev.isdisjoint(fdev):
-        reasons.append("A different camera was used.")
-        fixes.append("Use the same phone as your baseline.")
+    if bdev and fdev:
+        checked.append("device")
+        if bdev.isdisjoint(fdev):
+            miss("device", "A different camera was used.", "Use the same phone as your baseline.")
 
     bh, fh = _avg([f.captured_hour for f in bf]), _avg([f.captured_hour for f in ff])
     if bh is not None and fh is not None:
+        checked.append("time_of_day")
         gap = abs(bh - fh)
         gap = min(gap, 24 - gap)
         if gap > tol["hour"]:
-            reasons.append("Taken at a very different time of day.")
-            fixes.append("Scan at roughly the same time of day as your baseline.")
+            miss("time_of_day", "Taken at a very different time of day.",
+                 "Scan at roughly the same time of day as your baseline.")
 
-    return Comparability(not reasons, reasons, list(dict.fromkeys(fixes)))
+    return Comparability(not reasons, reasons, list(dict.fromkeys(fixes)), checked, failed)
 
 
 @dataclass
@@ -199,11 +223,7 @@ class EvidenceReport:
             "verdict": self.verdict.value,
             "message": self.message,
             "findings": [f.to_dict() for f in self.findings],
-            "comparability": None if self.comparability is None else {
-                "comparable": self.comparability.comparable,
-                "reasons": self.comparability.reasons,
-                "fixes": self.comparability.fixes,
-            },
+            "comparability": None if self.comparability is None else self.comparability.to_dict(),
             "symptoms": self.symptoms,
             "rule_version": self.rule_version,
         }

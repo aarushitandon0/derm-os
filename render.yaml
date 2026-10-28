@@ -1,0 +1,40 @@
+# Render blueprint for the derm//os API (FastAPI + SQLite). See docs/DEPLOY.md.
+# Secrets use `sync: false`: Render asks for them in the dashboard; values never live in git.
+services:
+  - type: web
+    name: dermos-api
+    runtime: python
+    rootDir: backend
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      # Public demo: replay recorded scans, spend no units.
+      - key: DEMO_MODE
+        value: "1"
+      # Fresh (ephemeral) database starts with the demo persona's routine.
+      - key: DERMOS_SEED
+        value: "1"
+      # SQLite and saved masks live on the instance disk; both reset on redeploy/restart.
+      - key: DERMOS_DB
+        value: /tmp/dermos.db
+      - key: DERMOS_MEDIA
+        value: /tmp/dermos-media
+      # Render's proxy appends the client IP to X-Forwarded-For; the rate limit reads that hop.
+      - key: TRUST_PROXY
+        value: "1"
+      - key: SCAN_RATE_LIMIT
+        value: "30/600"
+      - key: YOUCAM_UNIT_RESERVE
+        value: "100"
+      # Set in the dashboard: your Vercel URL, e.g. https://<project>.vercel.app
+      - key: CORS_ORIGINS
+        sync: false
+      # Only needed if you ever turn DEMO_MODE to 0 for a live judge session.
+      - key: YOUCAM_API_KEY
+        sync: false
+      - key: LIVE_SCAN_PASSCODE
+        sync: false

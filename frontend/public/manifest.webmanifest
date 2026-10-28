@@ -1,0 +1,11 @@
+{
+  "name": "derm//os",
+  "short_name": "derm//os",
+  "description": "Same face, same light, one change, honest verdict.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F5F1EA",
+  "theme_color": "#F5F1EA",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

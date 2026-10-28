@@ -1,11 +1,18 @@
-"""Copy real YouCam results (from run_experiments.py) into demo fixtures.
+"""Copy real YouCam results (from run_experiments.py) into demo fixtures, stripped for publishing.
 
     python scripts/make_fixtures.py                       # defaults below, persona "riya"
     python scripts/make_fixtures.py --persona me --map "window_1,window_2,window_3=baseline" "window_4,window_5=checkin" "lamp_*=lamp"
     python scripts/make_fixtures.py --dry-run
 
-Each results/<stem>.json goes to fixtures/<persona>/<set>/<stem>.json, and any
-masks in results/media/<stem>/ go to fixtures/<persona>/<set>/<stem>.masks/.
+Fixtures are committed to a public repo, so each one keeps ONLY:
+  * scores (raw_score, ui_score, HD region raw scores, overall, skin age)
+  * the action set and SD/HD mode
+  * the engine version (YouCam API version the result came from)
+  * the capture fingerprint (numbers measured from the photo: light, colour, size,
+    EXIF device/hour), when the photo is still in --photos
+
+Everything else is dropped: mask URLs, task ids, file names inside the response,
+and any field this script doesn't know. Mask images are never copied.
 No API calls; no units spent. Existing synthetic fixtures in a target set are
 removed so real and made-up scans are never mixed in one set.
 """
@@ -14,12 +21,21 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import json
+import re
 import shutil
 import sys
 from pathlib import Path
+from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from app.fingerprint import measure  # noqa: E402
+from app.youcam import SkinResult, load_result  # noqa: E402
 
 BACKEND = Path(__file__).resolve().parents[1]
 DEFAULT_MAP = ["window_1,window_2,window_3=baseline", "window_4,window_5=checkin", "lamp_*=lamp"]
+DEFAULT_ENGINE = "v2.1"   # run_experiments.py always uses YouCamClient(version="v2.1")
+PHOTO_EXTS = (".jpg", ".jpeg", ".png")
 
 
 def parse_map(items: list[str]) -> list[tuple[list[str], str]]:
@@ -32,17 +48,90 @@ def parse_map(items: list[str]) -> list[tuple[list[str], str]]:
     return out
 
 
+def _r(x: float | None) -> float | None:
+    return None if x is None else round(float(x), 4)
+
+
+def sanitize(res: SkinResult, engine: str, fingerprint: dict | None, stem: str) -> dict[str, Any]:
+    """Rebuild a fixture from parsed numbers only, so nothing unexpected can ride along."""
+    output = []
+    for name, sc in sorted(res.scores.items()):
+        item: dict[str, Any] = {"type": f"hd_{name}" if res.mode == "hd" else name,
+                                "raw_score": _r(sc.raw_score), "ui_score": _r(sc.ui_score)}
+        for reg, v in sorted(sc.regions.items()):
+            if reg != "whole":
+                item[reg] = {"raw_score": _r(v)}
+        output.append(item)
+    results: dict[str, Any] = {"output": output}
+    if res.overall is not None:
+        results["all"] = {"score": _r(res.overall)}
+    if res.skin_age is not None:
+        results["skin_age"] = _r(res.skin_age)
+    return {"meta": {"mode": res.mode, "actions": list(res.actions), "engine": f"YouCam skin-analysis {engine}",
+                     "fingerprint": fingerprint, "recorded_from": stem, "synthetic": False},
+            "response": {"data": {"task_status": "success", "results": results}}}
+
+
+_URLISH = re.compile(r"(https?:|://|\.(png|jpe?g|webp|heic|heif)\b)", re.I)
+
+
+def leaks(blob: Any) -> list[str]:
+    """Every string in the fixture that looks like a URL or an image path (should be none)."""
+    found: list[str] = []
+    if isinstance(blob, dict):
+        for k, v in blob.items():
+            found += leaks(k) + leaks(v)
+    elif isinstance(blob, list):
+        for v in blob:
+            found += leaks(v)
+    elif isinstance(blob, str) and _URLISH.search(blob):
+        found.append(blob)
+    return found
+
+
+def find_photo(photos: Path, stem: str) -> Path | None:
+    for ext in PHOTO_EXTS:
+        for cand in (photos / f"{stem}{ext}", photos / f"{stem}{ext.upper()}"):
+            if cand.is_file():
+                return cand
+    return None
+
+
+def fingerprint_for(photos: Path | None, stem: str) -> dict | None:
+    if photos is None:
+        return None
+    p = find_photo(photos, stem)
+    if p is None:
+        return None
+    fp = measure(p).to_dict()   # numbers only; the photo itself is never read into the fixture
+    return {k: v for k, v in fp.items() if v is not None}
+
+
+def build_fixture(result_path: Path, photos: Path | None) -> dict[str, Any]:
+    meta = json.loads(result_path.read_text(encoding="utf-8")).get("meta", {})
+    res = load_result(result_path)
+    blob = sanitize(res, meta.get("api_version") or DEFAULT_ENGINE, fingerprint_for(photos, result_path.stem),
+                    result_path.stem)
+    bad = leaks(blob)
+    if bad:
+        raise SystemExit(f"Refusing to write {result_path.stem}: URL or image path found in fixture.")
+    return blob
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--results", default=str(BACKEND / "results"))
     ap.add_argument("--fixtures", default=str(BACKEND / "fixtures"))
+    ap.add_argument("--photos", default=str(BACKEND.parent / "photos"),
+                    help="where the original photos are, to measure the fingerprint (not copied)")
     ap.add_argument("--persona", default="riya")
     ap.add_argument("--map", nargs="+", default=DEFAULT_MAP)
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
 
     res, fix = Path(a.results), Path(a.fixtures) / a.persona
-    stems = sorted(p.stem for p in res.glob("*.json") if p.stem != "report")
+    photos = Path(a.photos) if Path(a.photos).is_dir() else None
+    stems = sorted(p.stem for p in res.glob("*.json") if p.stem not in ("report", "benchmark"))
     if not stems:
         print(f"No result files in {res}. Run scripts/run_experiments.py first.")
         return 1
@@ -67,13 +156,12 @@ def main() -> int:
                 old.unlink()
                 shutil.rmtree(old.with_suffix(".masks"), ignore_errors=True)
         for st in members:
-            blob = json.loads((res / f"{st}.json").read_text(encoding="utf-8"))
-            blob.setdefault("meta", {})["recorded_from"] = f"results/{st}.json"
+            blob = build_fixture(res / f"{st}.json", photos)
             (dest / f"{st}.json").write_text(json.dumps(blob, indent=2), encoding="utf-8")
-            masks = res / "media" / st
-            if masks.is_dir():
-                shutil.copytree(masks, dest / f"{st}.masks", dirs_exist_ok=True)
-    print("Dry run, nothing copied." if a.dry_run else f"Done. Fixtures in {fix}")
+            print(f"  {st}: scores + actions + engine" + (" + fingerprint" if blob["meta"]["fingerprint"] else
+                                                          " (no photo found, fingerprint not recorded)"))
+    print("Dry run, nothing copied." if a.dry_run else
+          f"Done. Fixtures in {fix}. Mask images are never copied into fixtures.")
     return 0
 
 

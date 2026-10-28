@@ -256,6 +256,17 @@ class YouCamClient:
             delay = min(delay * 1.4, 6)
         raise YouCamError(f"Task {task_id} did not finish in {max_wait}s", code="timeout")
 
+    def delete_task(self, task_id: str) -> dict[str, Any]:
+        """Delete a finished task at YouCam, with its uploaded photo and generated outputs.
+
+        Docs (Task Management > delete-with-resources): POST /s2s/v2.0/task/delete,
+        bearer auth, JSON body {"task_id": "<id from the task's run endpoint>"}.
+        Only finished tasks can be deleted (OperationInvalid otherwise).
+        """
+        if not task_id:
+            raise YouCamError("No task id to delete", code="no_task_id")
+        return self._request("POST", "/s2s/v2.0/task/delete", json={"task_id": task_id})
+
     def analyze(self, image_path: str | Path, actions: list[str]) -> SkinResult:
         mode = validate_actions(actions)
         file_id = self.upload(image_path)
@@ -264,12 +275,37 @@ class YouCamClient:
         return normalize(body, mode, actions, task_id)
 
 
-def save_result(result: SkinResult, out_path: str | Path) -> None:
-    """Persist the raw response so demos and tests can replay real data with no units spent."""
+def delete_task_quietly(client: Any, task_id: str | None) -> bool:
+    """Ask YouCam to delete a finished task. Never raises: a failed delete is logged
+    (task id and error type only: no image data, no URLs, no keys) and the caller continues."""
+    if not task_id:
+        return False
+    try:
+        client.delete_task(task_id)
+        return True
+    except Exception as e:  # noqa: BLE001 - privacy clean-up must never break a scan
+        log.warning("YouCam task delete failed for task %s (%s, code %s).",
+                    task_id, type(e).__name__, getattr(e, "code", None))
+        return False
+
+
+def strip_urls(result_dict: dict[str, Any]) -> dict[str, Any]:
+    """Copy of SkinResult.to_dict() without mask URLs (they are signed links to images of a face)."""
+    out = {**result_dict, "scores": {}}
+    for k, v in (result_dict.get("scores") or {}).items():
+        out["scores"][k] = {**v, "mask_urls": []}
+    return out
+
+
+def save_result(result: SkinResult, out_path: str | Path, api_version: str | None = None) -> None:
+    """Persist the raw response so demos and tests can replay real data with no units spent.
+    This local copy still holds mask URLs; scripts/make_fixtures.py strips them before anything
+    is committed."""
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
-    Path(out_path).write_text(json.dumps({"meta": {"mode": result.mode, "actions": result.actions,
-                                                   "task_id": result.task_id},
-                                          "response": result.raw}, indent=2))
+    meta = {"mode": result.mode, "actions": result.actions, "task_id": result.task_id}
+    if api_version:
+        meta["api_version"] = api_version
+    Path(out_path).write_text(json.dumps({"meta": meta, "response": result.raw}, indent=2))
 
 
 def load_result(path: str | Path) -> SkinResult:

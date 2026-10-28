@@ -28,6 +28,13 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 _SAFE = re.compile(r"^[a-z0-9][a-z0-9_\-]{0,40}$")
 
 
+# What a fresh deploy starts with (only when the database is empty; see main.seed_if_empty).
+# Riya's 4-step routine from the design doc's hero flow. Her history is logged during the demo.
+PERSONA_SEED: dict[str, dict] = {
+    "riya": {"shelf": ["cl-01", "sr-01", "mo-01", "sp-01"]},
+}
+
+
 def fixtures_dir() -> Path:
     return Path(os.environ.get("DERMOS_FIXTURES", BACKEND_DIR / "fixtures"))
 

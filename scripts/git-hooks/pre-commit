@@ -1,0 +1,32 @@
+#!/bin/sh
+# derm//os pre-commit: block photo files so a face photo can never be committed.
+# Allowed: illustrations in frontend/public/ and docs/design-reference.png.
+# Install: powershell -ExecutionPolicy Bypass -File scripts/install-hooks.ps1
+
+blocked=""
+# Staged files that are added, copied, modified or renamed (not deletions).
+files=$(git -c core.quotePath=false diff --cached --name-only --diff-filter=ACMR)
+
+IFS='
+'
+for f in $files; do
+  lower=$(printf '%s' "$f" | tr '[:upper:]' '[:lower:]')
+  case "$lower" in
+    *.jpg|*.jpeg|*.png|*.heic|*.heif|*.webp) ;;
+    *) continue ;;
+  esac
+  case "$f" in
+    frontend/public/*|docs/design-reference.png) continue ;;
+  esac
+  blocked="$blocked
+  $f"
+done
+
+if [ -n "$blocked" ]; then
+  echo "pre-commit: blocked image file(s). derm//os never commits photos:$blocked" >&2
+  echo "" >&2
+  echo "Unstage with:  git restore --staged <file>   (or: git rm --cached <file>)" >&2
+  echo "Illustrations belong in frontend/public/. Edit scripts/git-hooks/pre-commit to change the allowlist." >&2
+  exit 1
+fi
+exit 0

@@ -1,13 +1,36 @@
-__pycache__/
-*.pyc
+# Secrets
 .env
 .env.*
 !.env.example
-*.db
-.venv/
-.pytest_cache/
-backend/results/
-backend/media/
+backend/.env
+!backend/.env.example
+
+# Face photos and anything derived from them: never commit
 photos/
+backend/photos/
+backend/media/
+# Experiment output: raw YouCam responses (with mask URLs) and downloaded masks stay local.
+# Only the two human-readable summaries are tracked.
+backend/results/*
+!backend/results/report.md
+!backend/results/benchmark.md
+
+# Local databases
+*.db
+backend/*.db
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# Node / build
 node_modules/
+dist/
 frontend/dist/
+*.tsbuildinfo
+
+# Editor / agent local settings
+.claude/settings.local.json

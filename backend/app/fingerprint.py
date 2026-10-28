@@ -4,9 +4,16 @@ Server-side we measure what the pixels tell us (light level, colour cast,
 resolution, device from EXIF). Face size and head pose come from the browser
 (MediaPipe Face Landmarker) because the client already computes them for the
 live capture guide.
+
+Camera shots taken in the browser carry no EXIF (the canvas JPEG has none), so
+the phone also sends its local capture hour and a coarse device label (camera
+track label or platform, plus resolution). Those are used only when EXIF has
+nothing; `device_source` / `hour_source` record where each value came from.
+A field with neither stays None and the gate reports it as "not recorded".
 """
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -26,6 +33,8 @@ class Fingerprint:
     yaw: float | None = None          # degrees (client)
     pitch: float | None = None
     roll: float | None = None
+    device_source: str | None = None  # "exif" | "client" | None
+    hour_source: str | None = None    # "exif" | "client" | None
 
     @property
     def short_side(self) -> int:
@@ -59,10 +68,29 @@ def _exif(img: Image.Image) -> tuple[str | None, int | None]:
     return device, hour
 
 
+_CTRL = re.compile(r"[\x00-\x1f\x7f]+")
+MAX_DEVICE_LABEL = 80
+
+
+def clean_device_label(label: str | None) -> str | None:
+    """Coarse, display-safe device label from the client: no control characters, capped length."""
+    if not label:
+        return None
+    s = re.sub(r"\s+", " ", _CTRL.sub(" ", str(label))).strip()
+    return s[:MAX_DEVICE_LABEL] or None
+
+
 def measure(image_path: str | Path, face_ratio: float | None = None, yaw: float | None = None,
-            pitch: float | None = None, roll: float | None = None) -> Fingerprint:
+            pitch: float | None = None, roll: float | None = None,
+            client_hour: int | None = None, client_device: str | None = None) -> Fingerprint:
     with Image.open(image_path) as im:
         device, hour = _exif(im)
+        device_src = "exif" if device else None
+        hour_src = "exif" if hour is not None else None
+        if device is None and clean_device_label(client_device):
+            device, device_src = clean_device_label(client_device), "client"
+        if hour is None and client_hour is not None and 0 <= int(client_hour) <= 23:
+            hour, hour_src = int(client_hour), "client"
         im = ImageOps.exif_transpose(im).convert("RGB")
         w, h = im.size
         # Central region approximates the face in a guided capture (face fills 60-80% of width).
@@ -71,4 +99,5 @@ def measure(image_path: str | Path, face_ratio: float | None = None, yaw: float 
         r, g, b = ImageStat.Stat(crop).mean
         luma = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0
         rb = r / b if b > 0 else 99.0
-    return Fingerprint(w, h, round(luma, 4), round(rb, 4), device, hour, face_ratio, yaw, pitch, roll)
+    return Fingerprint(w, h, round(luma, 4), round(rb, 4), device, hour, face_ratio, yaw, pitch, roll,
+                       device_src, hour_src)

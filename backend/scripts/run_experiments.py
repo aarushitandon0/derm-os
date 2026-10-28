@@ -33,8 +33,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import app.settings  # noqa: E402,F401  (loads backend/.env)
 from app.evidence import Capture, compare_conditions, noise_summary, ranges  # noqa: E402
 from app.fingerprint import measure  # noqa: E402
-from app.youcam import (YouCamClient, YouCamError, download_masks, load_result,  # noqa: E402
-                        save_result, validate_actions)
+from app.youcam import (YouCamClient, YouCamError, delete_task_quietly, download_masks,  # noqa: E402
+                        load_result, save_result, validate_actions)
 
 DEFAULT_CONCERNS = ["redness", "texture", "acne", "pore", "oiliness", "moisture", "radiance", "age_spot"]
 
@@ -100,10 +100,13 @@ def main() -> int:
                     src = "replay"
                 else:
                     res = client.analyze(p, actions)
-                    save_result(res, res_path)
+                    save_result(res, res_path, client.version)
                     # Mask URLs expire in ~2 h: save them now (plain GETs, no units).
                     saved = download_masks(res, out / "media" / p.stem, client.upload_http)
                     print(f"         saved {sum(len(v) for v in saved.values())} mask image(s)")
+                    # Masks are local now: ask YouCam to delete the task, photo and outputs.
+                    gone = delete_task_quietly(client, res.task_id)
+                    print("         YouCam task deleted" if gone else "         YouCam task delete failed (logged)")
                     src = "live"
             except (YouCamError, FileNotFoundError) as e:
                 msg = getattr(e, "friendly", None) or str(e)

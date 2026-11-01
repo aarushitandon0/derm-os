@@ -37,6 +37,28 @@ DEMO_FACES: dict[str, dict] = {
                       "eyebrow_color": "#2e2119", "hair_color": "#241a14"}}}},
         "answers": {"finish": "dewy", "history": "use", "budget": "any"},
     },
+    # A beginner: nothing tried yet, so the history step is skipped ("history": "new") and the
+    # basket leans to gentle, fragrance-free, low-active products. Hand-made values, labelled.
+    "beginner": {
+        "synthetic": True,
+        "label": "Demo data",
+        "skin": {"data": {"task_status": "success", "results": {"output": [
+            {"type": "skin_type", "whole": {"skin_type": "Normal"},
+             "t_zone": {"skin_type": "Normal"}, "u_zone": {"skin_type": "Normal"}},
+            {"type": "oiliness", "raw_score": 66.0, "ui_score": 78},
+            {"type": "moisture", "raw_score": 64.0, "ui_score": 77},
+            {"type": "pore", "raw_score": 70.0, "ui_score": 80},
+            {"type": "acne", "raw_score": 81.0, "ui_score": 88},
+            {"type": "redness", "raw_score": 74.0, "ui_score": 83},
+            {"type": "radiance", "raw_score": 68.0, "ui_score": 79},
+            {"type": "texture", "raw_score": 72.0, "ui_score": 82},
+        ]}}},
+        "tone": {"data": {"task_status": "success", "results": {
+            "face_quality": {"has_face": True, "area": "good", "frontal": "good", "lighting": "good",
+                             "faceangle": "good"},
+            "color": {"skin_color": "#c8a07c"}}}},
+        "answers": {"finish": "natural", "history": "new", "budget": "any"},
+    },
 }
 
 # The SD actions one live basket scan asks for: skin_type plus the seven concerns (5-8 tier).

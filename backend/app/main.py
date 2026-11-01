@@ -28,6 +28,8 @@ from . import settings  # noqa: F401  (loads backend/.env first)
 from . import basket as BK
 from . import beginner as B
 from . import cartcheck as CKT
+from . import chips as CH
+from . import pastecheck as PC
 from . import decision as D
 from . import demo
 from . import demo_faces as DF
@@ -104,7 +106,8 @@ app.mount("/media", StaticFiles(directory=MEDIA_DIR), name="media")
 # from "history" on purpose: the three history record types and their blocking rules are
 # untouched, and an outcome only ever describes, never blocks.
 # "baskets" stores each basket the shopping flow built, with every input it was built from.
-KINDS = ("history", "shelf", "captures", "trials", "outcomes", "baskets")
+# "chips" is the quick history by ingredient (app/chips.py): one row holding the whole list.
+KINDS = ("history", "shelf", "captures", "trials", "outcomes", "baskets", "chips")
 
 
 def _db() -> sqlite3.Connection:
@@ -1154,7 +1157,94 @@ def basket_questions():
     recs, outs = _records(), _outcomes()
     return {"questions": BASKET_QUESTIONS, "on_record": {"records": len(recs), "outcomes": len(outs),
             "bothered": sum(1 for o in outs if o.outcome in ("irritation", "breakout"))},
+            # Kept apart from on_record: chips are their own kind of history (app/chips.py).
+            "chips": [c.to_dict() for c in CH.parse_all(_chip_rows())],
+            "chip_catalogue": [{"id": c["id"], "label": c["label"], "purge_capable": c["purge_capable"]}
+                               for c in CH.catalogue()],
+            "reactions": CH.REACTIONS, "purge_question": CH.PURGE_QUESTION,
             "rule_version": BK.RULE_VERSION}
+
+
+# ---------------------------------------------------------------- quick history by ingredient
+def _chip_rows() -> list[dict]:
+    return (get("chips", "me") or {}).get("chips", [])
+
+
+class ChipIn(BaseModel):
+    chip: str = Field(min_length=1, max_length=80)
+    reaction: str
+    product_name: str = Field("", max_length=80)
+    confirmed_allergy: bool = False
+    usual_spots_settled: Literal["yes", "no", "not_sure"] | None = None
+    purge_choice: Literal["purging", "breakout"] | None = None
+
+
+class ChipsIn(BaseModel):
+    chips: list[ChipIn] = Field(max_length=40)
+
+
+class ChipMatchIn(BaseModel):
+    text: str = Field(min_length=1, max_length=60)
+
+
+@app.get("/api/chips")
+def list_chips():
+    return {"chips": [c.to_dict() for c in CH.parse_all(_chip_rows())],
+            "catalogue": CH.catalogue(), "reactions": CH.REACTIONS,
+            "purge_question": CH.PURGE_QUESTION, "rule_version": CH.RULE_VERSION}
+
+
+@app.put("/api/chips")
+def set_chips(body: ChipsIn):
+    """Replace the whole list. Each chip is validated by the engine; nothing is inferred."""
+    try:
+        built = [CH.Chip(**c.model_dump()) for c in body.chips]
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    put("chips", {"chips": [{k: v for k, v in c.to_dict().items()
+                             if k in ("chip", "reaction", "product_name", "confirmed_allergy",
+                                      "usual_spots_settled", "purge_choice")} for c in built]}, id="me")
+    return list_chips()
+
+
+@app.post("/api/chips/match")
+def match_chip(body: ChipMatchIn):
+    """Free text -> a chip, matched against the chips, families.json and the INCI synonyms."""
+    spec = CH.match_text(body.text)
+    if spec is None:
+        return {"match": None, "line": "No ingredient matched that. Try a chip above, or add the product "
+                                       "itself in your history."}
+    return {"match": {"id": spec["id"], "label": spec["label"], "purge_capable": spec["purge_capable"]},
+            "line": f"Matched: {spec['label']}."}
+
+
+class PasteCheckIn(BaseModel):
+    text: str = Field(min_length=1, max_length=PC.MAX_TEXT)
+    job: Literal["cleanser", "moisturiser", "sunscreen", "serum"]
+    nickname: str | None = Field(None, max_length=40)
+    finish: Literal["dewy", "natural", "matte"] | None = None
+    basket_id: str | None = None
+
+
+@app.post("/api/pastecheck")
+def paste_check(body: PasteCheckIn):
+    """A pasted ingredient list, checked like the shop's own stock. Nothing is stored. The face map
+    and finish come from the basket named (or the latest one), so zone fit reads your own zones."""
+    row = get("baskets", body.basket_id) if body.basket_id else None
+    if row is None:
+        rows = sorted(all_("baskets"), key=lambda r: r.get("taken_at") or "")
+        row = rows[-1] if rows else None
+    zones = measured = goal = None
+    if row:
+        inp = row["basket"]["inputs"]
+        zones = {z: ND.ZoneRead(z, r["type"], r["redness"], r["source"]) for z, r in inp["zones"].items()}
+        measured, goal = inp.get("measured") or {}, inp.get("finish")
+    try:
+        return PC.check(text=body.text, job=body.job, nickname=body.nickname, finish=body.finish,
+                        records=_records(), outcomes=_outcomes(), chips=_chip_rows(), catalog=CATALOG,
+                        zones=zones, measured=measured, goal_finish=goal)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
 
 
 def _basket_from(skin_payload, tone_payload, answers: dict, *, demo_: bool, source: str,
@@ -1166,7 +1256,8 @@ def _basket_from(skin_payload, tone_payload, answers: dict, *, demo_: bool, sour
     ut = UT.from_payload(tone_payload, answers)
     b = BK.build(zones=zones, measured=measured, ut=ut, answers=answers, stock=PRD.shop_tags(),
                  catalog=CATALOG, records=_records(), outcomes=_outcomes(),
-                 shelf=get_shelf()["product_ids"], demo=demo_, src_file_id=src_file_id)
+                 shelf=get_shelf()["product_ids"], demo=demo_, src_file_id=src_file_id,
+                 chips=_chip_rows())
     out = b.to_dict()
     if renders:
         out["tryon"]["looks"] = [{**lk, "image": renders.get(lk["look"])} for lk in out["tryon"]["looks"]]
@@ -1388,7 +1479,8 @@ def meta():
                        "purge_settle_weeks": TRI.PURGE_SETTLE_WEEKS},
             "engine_rules": [D.RULE_VERSION, E.RULE_VERSION, OC.RULE_VERSION, PAT.RULE_VERSION,
                              CKT.RULE_VERSION, TRI.RULE_VERSION, WB.RULE_VERSION, B.RULE_VERSION,
-                             PAT.FAM.FAMILIES_VERSION, BK.RULE_VERSION, ND.RULE_VERSION, UT.RULE_VERSION]}
+                             PAT.FAM.FAMILIES_VERSION, BK.RULE_VERSION, ND.RULE_VERSION, UT.RULE_VERSION,
+                             CH.RULE_VERSION, PC.RULE_VERSION, BK.LF.RULE_VERSION, BK.SP.RULE_VERSION]}
 
 
 def build_scene(name: str) -> dict:

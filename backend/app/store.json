@@ -911,6 +911,68 @@
           }
         ]
       }
+    },
+    {
+      "id": "mo-17",
+      "name": "Bright Dew C Gel",
+      "brand": "Ferncove",
+      "role": "moisturiser",
+      "leave_on": true,
+      "price_inr": 699,
+      "inci": [
+        "Aqua",
+        "Glycerin",
+        "Ascorbyl Glucoside 2%",
+        "Propanediol",
+        "Carbomer",
+        "Sodium Hydroxide",
+        "Phenoxyethanol"
+      ],
+      "inci_complete": true,
+      "aimed_at": [
+        "radiance"
+      ],
+      "source": "Fictional product; INCI modelled on vitamin C derivative gel moisturisers",
+      "shop": {
+        "job": "moisturiser",
+        "suits": [
+          "oily",
+          "combination"
+        ],
+        "texture": "gel",
+        "finish": "natural"
+      }
+    },
+    {
+      "id": "mo-18",
+      "name": "Clear Tone Azelaic Gel",
+      "brand": "Lumen & Leaf",
+      "role": "moisturiser",
+      "leave_on": true,
+      "price_inr": 749,
+      "inci": [
+        "Aqua",
+        "Azelaic Acid 10%",
+        "Glycerin",
+        "Propanediol",
+        "Xanthan Gum",
+        "Phenoxyethanol"
+      ],
+      "inci_complete": true,
+      "aimed_at": [
+        "acne",
+        "redness"
+      ],
+      "source": "Fictional product; INCI modelled on azelaic acid gels",
+      "shop": {
+        "job": "moisturiser",
+        "suits": [
+          "oily",
+          "combination"
+        ],
+        "texture": "gel",
+        "finish": "natural"
+      }
     }
   ],
   "basket_note": "Each product's `shop` block is the shop's own tagging, used only by the basket (app/basket.py): job, the skin types it is made for (suits), texture, finish, and for tinted products the shade range with each shade's depth and undertone family. Every brand, product, price and shade is invented."

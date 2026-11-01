@@ -28,11 +28,15 @@ answer comes from the quiz and says "from your answers".
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 
 from . import cartcheck as CC
+from . import chips as CH
 from . import decision as D
+from . import lookfor as LF
 from . import needs as N
 from . import patterns as P
+from . import startplan as SP
 from . import undertone as U
 from .inci import canonical
 from .outcomes import ProductOutcome
@@ -40,7 +44,8 @@ from .outcomes import ProductOutcome
 RULE_VERSION = "basket-1.0"
 
 # Exactly one next step for every basket (docs/strategy.md section 4, step 7).
-NEXT_STEP = "Patch-test the new products, then start one at a time. Tap to set day-14 reminders."
+NEXT_STEP = ("Follow your start plan below: patch-test each new product first, then add one new product "
+             "every 2 weeks.")
 NEXT_STEP_NOTHING_NEW = ("Nothing new to buy: keep using what you have. Tap to set a day-14 reminder "
                          "to look again.")
 
@@ -51,8 +56,11 @@ HISTORY_CLEAR = "Nothing on this label matches anything that bothered you before
 BUDGETS = {"under_700": 700, "under_1000": 1000, "any": None}
 
 # Skip kinds, in the order they are tried. The first that applies is the reason shown.
-SKIP_ORDER = ("history", "unknown", "finish", "shade", "zone", "budget")
-SKIP_LABEL = {"history": "From your history", "unknown": "Ingredient list incomplete → unknown",
+# "tried" (an ingredient chip, app/chips.py) sits right under "history": product-level history ranks
+# above chips, so when both apply the product-level line is the one shown first.
+SKIP_ORDER = ("history", "tried", "unknown", "finish", "shade", "zone", "budget")
+SKIP_LABEL = {"history": "From your history", "tried": "From what you've tried",
+              "unknown": "Ingredient list incomplete → unknown",
               "finish": "Wrong finish", "shade": "No shade for you", "zone": "Wrong zone type",
               "budget": "Over your budget"}
 
@@ -80,6 +88,12 @@ JOB_TITLE = {("cleanser", "whole"): "Cleanser", ("moisturiser", "t_zone"): "T-zo
 # Owned products from the app's own catalogue carry no shop tags, so the only job they can be
 # said to fill without guessing is the whole-face cleanser (any cleanser, used without a problem).
 SHELF_BY_ROLE = {"cleanser": "cleanser"}
+
+# Beginner ("nothing tried yet"): no history step, and the ranking leans to fragrance-free, gentle,
+# low-active products. Every card then carries this label.
+GENTLE_LABEL = "Gentle start for new routines"
+GENTLE_ACTIVE_CHIPS = ("retinoids", "aha", "bha", "benzoyl_peroxide", "vitamin_c", "azelaic_acid",
+                       "niacinamide")
 
 
 def _and(words: list[str]) -> str:
@@ -136,6 +150,7 @@ class Considered:
     shade: dict | None = None
     hits: list[str] = field(default_factory=list)
     over_budget: bool = False
+    tried: dict = field(default_factory=dict)
 
 
 def _history_line(chk: CC.CartCheck | None, use_history: bool) -> str:
@@ -163,12 +178,16 @@ def _skip_history(chk: CC.CartCheck) -> str | None:
 
 def _consider(p: D.Product, tags: dict, job: Job, *, chk: CC.CartCheck | None, finish: str,
               fspec: dict, ut: U.Undertone, zones_line: str, targets: list[str],
-              cap: int | None, avoid: list[str]) -> Considered:
+              cap: int | None, avoid: list[str], chips: list[CH.Chip] | None = None) -> Considered:
     c = Considered(p, tags, chk, hits=_hits(p, targets))
     if chk is not None:
         why = _skip_history(chk)
         if why:
             c.reasons.append(("history", why))
+    if chips:
+        c.tried = CH.evaluate(p.inci, chips)
+        for s in c.tried["skip"]:
+            c.reasons.append(("tried", s["line"]))
     if not p.inci_complete:
         c.reasons.append(("unknown", f"{CC.UNKNOWN_LABEL}: anything not printed on the label can't be "
                                      f"checked against your history, so it isn't picked."))
@@ -192,13 +211,22 @@ def _consider(p: D.Product, tags: dict, job: Job, *, chk: CC.CartCheck | None, f
     return c
 
 
-def _rank_key(c: Considered, fspec: dict, textures: list[str]):
+def gentle_rank(p: D.Product) -> tuple[int, int]:
+    """(lists fragrance or essential oils, number of actives on the label): lower is gentler."""
+    keys = set(p.canonical_inci)
+    frag = bool(keys & (set(P.FAM.members_of("fragrance")) | {"essential oils"}))
+    actives = sum(1 for cid in GENTLE_ACTIVE_CHIPS if keys & set(CH.spec_of(cid)["members"]))
+    return (1 if frag else 0, actives)
+
+
+def _rank_key(c: Considered, fspec: dict, textures: list[str], beginner: bool = False):
     rung = 1 if c.check is not None and c.check.rung == CC.Rung.PATCH_TEST_FIRST.value else 0
+    gentle = gentle_rank(c.product) if beginner else (0, 0)
     fin = c.tags.get("finish")
     fin_rank = fspec["prefer"].index(fin) if fin in fspec["prefer"] else len(fspec["prefer"])
     tex = c.tags.get("texture")
     tex_rank = textures.index(tex) if tex in textures else len(textures)
-    return (c.over_budget, rung, fin_rank, -len(c.hits), tex_rank, c.product.price_inr, c.product.id)
+    return (c.over_budget, rung, gentle, fin_rank, -len(c.hits), tex_rank, c.product.price_inr, c.product.id)
 
 
 def _zone_phrase(job: Job, zones: dict[str, N.ZoneRead]) -> str:
@@ -243,12 +271,16 @@ class Basket:
     next_step: str
     tryon: dict
     inputs: dict
+    start_plan: dict = field(default_factory=dict)
+    tried: dict = field(default_factory=dict)
+    beginner: bool = False
     rule_version: str = RULE_VERSION
 
     def to_dict(self) -> dict:
         return {"face_map": self.face_map, "jobs": self.jobs, "skipped": self.skipped,
                 "already_own": self.already_own, "total_inr": self.total_inr,
                 "next_step": self.next_step, "tryon": self.tryon, "inputs": self.inputs,
+                "start_plan": self.start_plan, "tried": self.tried, "beginner": self.beginner,
                 "rule_version": self.rule_version}
 
 
@@ -271,17 +303,23 @@ def face_map(zones: dict[str, N.ZoneRead], needs: list[N.Need], ut: U.Undertone,
 def build(*, zones: dict[str, N.ZoneRead], measured: dict[str, float] | None, ut: U.Undertone,
           answers: dict, stock: dict[str, dict], catalog: dict[str, D.Product],
           records: list[D.HistoryRecord], outcomes: list[ProductOutcome], shelf: list[str],
-          demo: bool = False, src_file_id: str | None = None) -> Basket:
-    """The whole basket. `stock` is the shop's tags by product id (app/products.shop_tags)."""
+          demo: bool = False, src_file_id: str | None = None, chips: list | None = None,
+          today: date | None = None) -> Basket:
+    """The whole basket. `stock` is the shop's tags by product id (app/products.shop_tags).
+    `chips` is the quick history by ingredient (app/chips.py); `today` dates the start plan."""
     answers = dict(answers or {})
     finish, fspec = N.finish_spec(answers.get("finish"))
     use_history = answers.get("history", "use") != "ignore"
+    # "new": nothing tried yet. The history step is skipped and the ranking leans gentle.
+    beginner = answers.get("history") == "new"
     cap = BUDGETS.get(answers.get("budget") or "any")
-    recs = list(records) if use_history else []
+    chip_objs = CH.parse_all(chips) if use_history and not beginner else []
+    # A clinician-confirmed chip becomes the existing hard-block record type, nothing new.
+    recs = (list(records) + CH.records_from(chip_objs)) if use_history else []
     outs = list(outcomes) if use_history else []
     reports = P.run_both(outs, catalog)
     suspects = {s.ingredient for r in reports.values() for s in r.suspects if s.tier == P.Tier.SUSPECT.value}
-    needs = N.build_needs(zones, measured, suspects)
+    needs = N.build_needs(zones, measured, suspects | CH.itched_members(chip_objs))
     avoid = N.avoid_for(needs)
     shelf = [i for i in shelf if i in catalog]
     checks: dict[str, CC.CartCheck] = {}
@@ -332,7 +370,7 @@ def build(*, zones: dict[str, N.ZoneRead], measured: dict[str, float] | None, ut
                 continue
             c = _consider(catalog[pid], tags, job, chk=chk(pid) if use_history else None, finish=finish,
                           fspec=fspec, ut=ut, zones_line=_zone_phrase(job, zones), targets=targets,
-                          cap=cap, avoid=avoid)
+                          cap=cap, avoid=avoid, chips=chip_objs)
             if pid in shelf and not c.reasons:
                 owned_out.append({"product_id": pid, "name": c.product.name, "brand": c.product.brand,
                                   "job": job.title,
@@ -360,7 +398,7 @@ def build(*, zones: dict[str, N.ZoneRead], measured: dict[str, float] | None, ut
         elif eligible and cap is not None:
             card["note"] = (f"Nothing under ₹{cap:,} fits this step, so this is the closest fit "
                             f"in the shop's stock.")
-        eligible.sort(key=lambda c: _rank_key(c, fspec, textures))
+        eligible.sort(key=lambda c: _rank_key(c, fspec, textures, beginner))
         for c in considered:
             if c.reasons:
                 kind, line = sorted(c.reasons, key=lambda r: SKIP_ORDER.index(r[0]))[0]
@@ -391,6 +429,9 @@ def build(*, zones: dict[str, N.ZoneRead], measured: dict[str, float] | None, ut
             {"key": "history", "label": "From your history", "line": _history_line(top.check, use_history)},
             {"key": "finish", "label": "Matches your finish", "line": _finish_line(top.tags, finish, fspec)},
         ]
+        card["tried"] = list(top.tried.get("worked", [])) + list(top.tried.get("notes", []))
+        if beginner:
+            card["label"] = GENTLE_LABEL
         card["also_fits"] = [{"product_id": c.product.id, "name": c.product.name, "brand": c.product.brand,
                               "price_inr": c.product.price_inr,
                               "patch_test_first": bool(c.check and c.check.rung == CC.Rung.PATCH_TEST_FIRST.value)}
@@ -404,6 +445,18 @@ def build(*, zones: dict[str, N.ZoneRead], measured: dict[str, float] | None, ut
     next_step = NEXT_STEP if bought else NEXT_STEP_NOTHING_NEW
     tryon = tryon_plan(base_pick, base_fallback_shade, ut, demo=demo, src_file_id=src_file_id)
 
+    # "What to look for" on every card: works in any store, names no brand (app/lookfor.py).
+    hist_avoid = _history_avoid(reports, recs)
+    for card in jobs_out:
+        tinted = any(t.get("tinted") for t in stock.values() if t.get("job") == card["job"])
+        card["look_for"] = LF.block(job=card["job"], zone=card["zone"], needs=needs, finish=finish, ut=ut,
+                                    tinted=tinted, chips=chip_objs, history_avoid=hist_avoid,
+                                    need_avoid=avoid)
+    plan_ = SP.plan(jobs_out, catalog, today or date.today())
+    tried = {"chips": [c.to_dict() for c in chip_objs],
+             "purge_questions": [c.to_dict() for c in chip_objs if c.purge_question()],
+             "beginner": beginner, "rule_version": CH.RULE_VERSION}
+
     fm = face_map(zones, needs, ut, demo=demo)
     inputs = {
         "answers": answers, "zones": {z: r.to_dict() for z, r in zones.items()},
@@ -413,9 +466,33 @@ def build(*, zones: dict[str, N.ZoneRead], measured: dict[str, float] | None, ut
         "stock": sorted(stock), "use_history": use_history, "budget_cap": cap, "finish": finish,
         "rule_versions": {"basket": RULE_VERSION, "needs": N.RULE_VERSION, "undertone": U.RULE_VERSION,
                           "cartcheck": CC.RULE_VERSION, "patterns": P.RULE_VERSION,
-                          "families": P.FAM.FAMILIES_VERSION},
+                          "families": P.FAM.FAMILIES_VERSION, "chips": CH.RULE_VERSION,
+                          "lookfor": LF.RULE_VERSION, "startplan": SP.RULE_VERSION},
+        "chips": [c.to_dict() for c in chip_objs], "beginner": beginner, "today": plan_["today"],
     }
-    return Basket(fm, jobs_out, skipped, owned_out, total, next_step, tryon, inputs)
+    return Basket(fm, jobs_out, skipped, owned_out, total, next_step, tryon, inputs,
+                  start_plan=plan_, tried=tried, beginner=beginner)
+
+
+def _history_avoid(reports: dict[str, P.PatternReport], recs: list[D.HistoryRecord]) -> list[dict]:
+    """Product-level history as "Avoid:" items: exact suspects from your outcomes, and ingredients
+    you chose to avoid or hold a clinician-confirmed record for. No product or brand is named."""
+    out: list[dict] = []
+    for kind, r in reports.items():
+        for s in r.suspects:
+            if s.tier == P.Tier.SUSPECT.value and s.match_type == "exact":
+                why = ("in products that made you itch" if kind == "irritation"
+                       else "in products that broke you out")
+                out.append({"what": s.display, "why": why})
+    for rec in recs:
+        if rec.type in (D.RecordType.AVOID, D.RecordType.CONFIRMED_ALLERGY) and rec.ingredient:
+            if rec.note.startswith("From your ingredient history"):
+                continue          # the chip itself is listed by app/lookfor.py
+            why = "you chose to avoid it" if rec.type == D.RecordType.AVOID else "clinician-confirmed record"
+            item = {"what": rec.ingredient, "why": why}
+            if item not in out:
+                out.append(item)
+    return out
 
 
 def vto_body(src_file_id: str | None, hex_: str, look: str) -> dict:

@@ -76,6 +76,16 @@ RIYA_USING = [
 # The breakout she is dealing with now: closed comedones on the cheeks, not her usual spots.
 RIYA_BREAKOUT = {"zones": ["cheeks"], "usual_spots": False, "symptoms": [], "weeks_ago": 1}
 
+# Riya's story told the way most people remember it: by ingredient (app/chips.py). Vitamin C
+# itched; azelaic acid broke her out on the chin, her usual spot, and it settled by about week 5,
+# so she has answered the purge question "yes" and the offer is waiting for her choice (never made
+# for her); snail mucin suited her. Her product-level history above stays exactly as it was.
+RIYA_CHIPS = [
+    {"chip": "vitamin_c", "reaction": "itched"},
+    {"chip": "azelaic_acid", "reaction": "broke_out", "usual_spots_settled": "yes"},
+    {"chip": "snail_mucin", "reaction": "suited"},
+]
+
 # A beginner. No outcomes and no history at all, which is the whole point: the Start here path has
 # to work from nothing. Her skin type comes from her answers, labelled as such, because no
 # skin_type fixture exists to read one from.
@@ -108,6 +118,8 @@ class Scene:
     outcomes: list[dict] | None = None
     # Free-text notes the screens show, e.g. the breakout she is dealing with. Never a verdict.
     situation: dict | None = None
+    # Quick history by ingredient (app/chips.py). None leaves the stored chips alone; [] clears them.
+    chips: list[dict] | None = None
 
 
 def _riya(started: int, scans: list[Scans], logs: list[tuple[int, list[str]]]) -> Scene:
@@ -152,9 +164,9 @@ SCENES: dict[str, Scene] = {
     # Strategy v2, the basket flow. Her history and shelf on record, and no scan: the face comes
     # from the basket endpoint's demo face (app/demo_faces.py), labelled "Demo data".
     "riya-basket": Scene("riya", RIYA_TRIAL_SHELF, RIYA_HISTORY, None, "pore", [], 0, [], [],
-                         outcomes=RIYA_OUTCOMES),
+                         outcomes=RIYA_OUTCOMES, chips=RIYA_CHIPS),
     # Start here. Deliberately empty: no shelf, no history, no outcomes, no scan.
-    "beginner": Scene("riya", [], [], None, "pore", [], 0, [], [], outcomes=[],
+    "beginner": Scene("riya", [], [], None, "pore", [], 0, [], [], outcomes=[], chips=[],
                       situation={"kind": "beginner", "answers": BEGINNER_ANSWERS}),
 }
 
@@ -188,6 +200,8 @@ def build(name: str, put: Callable[..., dict], all_: Callable[[str], list[dict]]
     # The trial's exclusion check uses this persona's own records, as POST /api/trials would.
     records = [D.HistoryRecord(D.RecordType(h["type"]), h.get("product_id"), h.get("ingredient"), h.get("note", ""))
                for h in sc.history or []]
+    if sc.chips is not None:
+        put("chips", {"chips": [dict(c) for c in sc.chips]}, id="me")
     if sc.outcomes is not None:
         write_outcomes(sc.outcomes, put, all_, delete, catalog, now)
 

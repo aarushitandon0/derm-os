@@ -236,9 +236,18 @@ def build_needs(zones: dict[str, ZoneRead], measured: dict[str, float] | None,
     suspects = set(suspects or ())
     out: list[Need] = []
 
+    groups = [set(g) for g in d.get("same_need", [])]
+
+    def same(a: str, b: str) -> bool:
+        return a == b or any(a in g and b in g for g in groups)
+
     def add(n: Need) -> Need:
         for have in out:
-            if have.key == n.key and (have.zone == n.zone or have.zone == "whole"):
+            if same(have.key, n.key) and (have.zone == n.zone or have.zone == "whole"):
+                if have.key != n.key and n.from_ != ["zone type"]:
+                    # One need per zone: the measured need's words replace the zone type's
+                    # ("hydration on cheeks", not "light moisture" and "hydration" both).
+                    have.key, have.words = n.key, n.words
                 have.targets += [t for t in n.targets if t not in have.targets]
                 have.from_ += [f for f in n.from_ if f not in have.from_]
                 have.avoid += [a for a in n.avoid if a not in have.avoid]

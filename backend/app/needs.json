@@ -7,6 +7,10 @@
     {"id": "youcam-zones", "text": "YouCam AI Skin Analysis: skin_type reports whole, t_zone and u_zone subcategories, each one of Normal, Oily, Dry, Combination, optionally with Redness.", "url": "https://docs.perfectcorp.com/reference/ai_skin_analysis"},
     {"id": "texture-rule", "text": "derm//os house rule: a gel or fluid where a zone reads oily, a cream where it reads dry, a lotion where it reads normal. Finish goal then reorders within that.", "url": null}
   ],
+  "facts": [
+    {"id": "patch-test", "text": "Patch-test a new product before full-face use: a small amount on the inner arm (or another discreet spot such as behind the ear), twice a day for 7 to 10 days, and wash it off and stop if the skin reacts. These are the American Academy of Dermatology's steps as reported by Medical News Today.", "url": "https://www.medicalnewstoday.com/articles/patch-test-skincare", "also": "https://www.aad.org/news/how-to-test-skin-care-products-before-use", "checked": "2026-11-01: the Medical News Today page was read; the AAD page did not render for us, so it is listed as the original, not as read."},
+    {"id": "one-at-a-time", "text": "Introduce one new product at a time, and use it for at least a week (dermatologists quoted in the press say one to two weeks) before adding the next, so a reaction points at one product. derm//os uses the top of that range: 2 weeks.", "url": "https://vanicream.com/skin-basics/tips-for-introducing-a-new-product-into-your-skin-care-routine", "also": "https://www.businessinsider.nl/dermatologists-how-to-introduce-a-skincare-product-to-your-routine-2020-9", "checked": "2026-11-01: the first page was read (one at a time, at least a week); the second is a dermatologist interview found by search that now redirects, so it is listed, not quoted."}
+  ],
   "zones": {
     "t_zone": {"name": "T-zone", "where": "forehead, nose and chin"},
     "u_zone": {"name": "Cheeks", "where": "cheeks and jawline"}
@@ -20,6 +24,8 @@
     "normal": {"key": "balance", "words": "light moisture", "targets": ["glycerin", "sodium hyaluronate"], "textures": ["lotion", "gel", "cream"], "source": "cosing"},
     "redness": {"key": "calm", "words": "calming, fragrance-free", "targets": ["centella asiatica extract", "panthenol", "allantoin"], "avoid": ["fragrance"], "textures": [], "source": "cosing"}
   },
+  "same_need": [["balance", "hydration"]],
+  "same_need_note": "Needs that mean the same thing on one zone. 'Light moisture' (a normal zone) and 'hydration' (moisture measured low) both ask for water-holding ingredients, so a zone gets one of them: the measured one's words, both target lists.",
   "concern_threshold": 60,
   "concern_threshold_note": "YouCam raw_score is higher for healthier-looking skin. A concern below 60 counts as a need; the lowest come first. Raw scores are used only here and are never shown.",
   "concern_needs": {

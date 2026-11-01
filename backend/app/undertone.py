@@ -23,9 +23,11 @@ your skin colour"). The rule, on the colour converted to CIELAB (D65):
 The thresholds are a house rule, versioned with RULE_VERSION, not a measurement. The family for
 shade matching lists the primary undertone first and the neutral neighbour second.
 
-With no colour at all (no tone scan, or an unreadable one) the shopping flow still answers: it
-uses the quiz's undertone if one was given, labelled "from your answers", and otherwise neutral
-shades, labelled as a middle-of-range default.
+With no colour at all (no tone scan, or one YouCam refused) the shopping flow still answers: it
+uses the quiz's undertone if one was given, or the one quick question ("In daylight, do the veins
+on your wrist look green, blue/purple, or a mix?": green -> warm, blue/purple -> cool, a mix ->
+neutral), labelled "from your answers", and otherwise neutral shades, labelled as a
+middle-of-range default.
 """
 from __future__ import annotations
 
@@ -44,6 +46,9 @@ FAMILIES = {
     "olive": ["olive", "neutral"],
 }
 DEPTHS = ("fair", "light", "medium", "tan", "deep")
+# The one quick question asked when the photo can't give a skin colour.
+VEINS_QUESTION = "In daylight, do the veins on your wrist look green, blue/purple, or a mix?"
+VEINS = {"green": "warm", "blue_purple": "cool", "mix": "neutral"}
 
 FROM_FACE = "From your face (YouCam)"
 FROM_ANSWERS = "from your answers"
@@ -135,7 +140,7 @@ def from_payload(payload, answers: dict | None = None) -> Undertone:
         tone, depth, lab = classify(hex_)
         return Undertone(tone, depth, FAMILIES[tone], "face", FROM_FACE, hex_, lab, DERIVED_NOTE)
     answers = answers or {}
-    tone = answers.get("undertone")
+    tone = answers.get("undertone") if answers.get("undertone") in FAMILIES else VEINS.get(answers.get("veins"))
     depth = answers.get("depth") if answers.get("depth") in DEPTHS else "medium"
     if tone in FAMILIES:
         return Undertone(tone, depth, FAMILIES[tone], "answers", FROM_ANSWERS)

@@ -29,7 +29,11 @@ def centred_face(img):
 
 @pytest.fixture(autouse=True)
 def _fake_face_detector():
-    from app import facecrop
+    from app import facecrop, pose
     facecrop.set_detector(centred_face)
+    # Head pose: a normal, slightly turned selfie unless a test says otherwise. The real
+    # MediaPipe model is never loaded in tests.
+    pose.set_estimator(lambda img: pose.Pose(-11.0, -3.5, 7.5))
     yield
     facecrop.set_detector(None)
+    pose.set_estimator(None)

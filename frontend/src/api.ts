@@ -174,7 +174,7 @@ export interface CartCheck {
 
 // ---------------------------------------------------------------- the basket (shop by your face)
 export interface BasketQuestion {
-  id: "finish" | "history" | "budget";
+  id: "finish" | "history" | "budget" | "veins";
   text: string;
   why: string;
   skippable?: boolean;

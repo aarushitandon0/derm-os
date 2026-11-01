@@ -1,9 +1,10 @@
-"""Demo faces for the basket flow: SYNTHETIC data, written to match the documented response shapes.
+"""Demo faces for the basket flow.
 
-Nothing here came from a YouCam call. No skin_type or skin-tone fixture has been recorded yet
-(recording one costs units), so the demo persona's face is hand-made and every screen that shows
-it carries the "Demo data" tag. When the live session records a real response, it replaces the
-entry below and `synthetic` turns False.
+Riya's face now comes from fixtures/riya/basket_face.json: the values of one live scan
+(2026-11-01: skin_type + 7 concerns, and Skin Tone), cleaned to values only. Her history and shelf
+stay fictional, so every screen still carries the "Demo data" tag, and with no recorded render the
+try-on says "Preview appears on a live scan". The hand-made entry below (SYNTHETIC, nothing from a
+YouCam call) is the fallback when that file is absent.
 
 Shapes:
   * skin analysis (format=json): data.results.output[], one item per action. skin_type carries the
@@ -54,8 +55,9 @@ def load_face(persona: str) -> dict | None:
     path = demo.fixtures_dir() / persona / "basket_face.json"
     if path.is_file():
         blob = json.loads(path.read_text(encoding="utf-8"))
+        # Still the demo persona, so it keeps the "Demo data" tag; `source` says where the values came from.
         return {"synthetic": bool(blob.get("synthetic", False)),
-                "label": "Recorded YouCam data" if not blob.get("synthetic") else "Demo data",
+                "label": blob.get("label") or "Demo data", "source": blob.get("source"),
                 "skin": blob.get("skin"), "tone": blob.get("tone"), "renders": blob.get("renders") or {},
                 "answers": blob.get("answers") or {}}
     face = DEMO_FACES.get(persona)

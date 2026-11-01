@@ -49,15 +49,66 @@ HD_ACTIONS = {
     "hd_tear_trough", "hd_skin_type",
 }
 
-# Friendly messages for documented image errors (docs: File Specs & Errors).
+# Friendly messages for documented image errors (docs: File Specs & Errors, and the AI Facial
+# Color Tones Analyzer's face-angle errors). One plain sentence each; no raw code reaches the user.
 IMAGE_ERRORS = {
-    "error_below_min_image_size": "Photo resolution is too low. Use the phone camera (HD needs 1080 px on the short side).",
-    "error_exceed_max_image_size": "Photo is too large. Try again with a smaller image.",
+    "error_below_min_image_size": "Photo resolution is too low, so use the phone camera (HD needs 1080 px on the short side).",
+    "error_exceed_max_image_size": "Photo is too large, so try again with a smaller image.",
     "error_src_face_too_small": "Hold the phone a little closer.",
     "error_src_face_out_of_bound": "Centre your face so it is fully inside the frame.",
-    "error_lighting_dark": "It's too dark. Face a window or a bright, even light.",
-    "error_no_face": "No face found. Look straight at the camera.",
+    "error_lighting_dark": "Face a window or a bright, even light and try again.",
+    "error_no_face": "Look straight at the camera with your whole face in view.",
+    "error_face_angle_leftward": "Turn a little more toward the camera and try again.",
+    "error_face_angle_rightward": "Turn a little more toward the camera and try again.",
+    "error_face_angle_upward": "Lower your chin a little and try again.",
+    "error_face_angle_downward": "Raise your chin a little and try again.",
+    "error_face_angle_left_tilt": "Hold your head upright, not tilted, and try again.",
+    "error_face_angle_right_tilt": "Hold your head upright, not tilted, and try again.",
 }
+# Any other photo error YouCam may add later, and any request YouCam refused: still one plain line.
+PHOTO_ERROR_FALLBACK = "Face the camera in even light and try again."
+SERVICE_ERROR_FALLBACK = "The skin service couldn't finish this request, so try again in a minute."
+# Photo errors that mean the photo can't be used for anything (as opposed to a face angle the
+# tone check is pickier about than skin analysis is).
+UNUSABLE_PHOTO_ERRORS = {"error_below_min_image_size", "error_exceed_max_image_size", "error_src_face_too_small",
+                         "error_src_face_out_of_bound", "error_lighting_dark", "error_no_face"}
+
+
+def friendly_error(code) -> str:
+    """One plain sentence for a YouCam error code. Never the code itself."""
+    c = str(code or "")
+    if c in IMAGE_ERRORS:
+        return IMAGE_ERRORS[c]
+    if c.startswith("error_face_angle"):
+        return "Turn a little more toward the camera and try again."
+    if c.startswith("error_"):
+        return PHOTO_ERROR_FALLBACK
+    return SERVICE_ERROR_FALLBACK
+
+
+def is_face_angle_error(code) -> bool:
+    return str(code or "").startswith("error_face_angle")
+
+
+def is_invalid_parameter(e) -> bool:
+    """YouCam refused the request's parameters (HTTP 4xx before a task runs: never charged)."""
+    c = str(getattr(e, "code", "") or "").lower().replace("_", "")
+    return "invalidparam" in c
+
+
+# face_angle_strictness_level for Skin Tone, most lenient first (docs: "strict, high, medium, low
+# to flexible"; YouCam's own default is high). derm//os sends the most lenient by default: a
+# slightly turned selfie is normal and the undertone must still be read from it.
+TONE_STRICTNESS_LEVELS = ("flexible", "low", "medium", "high", "strict")
+DEFAULT_TONE_STRICTNESS = "flexible"
+# On an invalid-parameter error the client steps to the next stricter level, but never past this.
+MAX_AUTO_STRICTNESS = "medium"
+
+
+def tone_strictness() -> str:
+    """YOUCAM_FACE_ANGLE_STRICTNESS if it is a documented level, else the most lenient."""
+    v = os.environ.get("YOUCAM_FACE_ANGLE_STRICTNESS", "").strip().lower()
+    return v if v in TONE_STRICTNESS_LEVELS else DEFAULT_TONE_STRICTNESS
 
 
 class YouCamError(RuntimeError):
@@ -221,7 +272,7 @@ class YouCamClient:
             if r.status_code >= 400:
                 code = body.get("error_code") or body.get("error")
                 raise YouCamError(f"{method} {path} -> {r.status_code}: {body}", code=code,
-                                  friendly=IMAGE_ERRORS.get(str(code)))
+                                  friendly=friendly_error(code))
             return body
         raise YouCamError(f"{method} {path} kept failing after retries", code="retry_exhausted")
 
@@ -297,7 +348,7 @@ class YouCamClient:
                 return body
             if status == "error":
                 err = (body.get("data") or {}).get("error") or body.get("error")
-                raise YouCamError(f"Task failed: {err}", code=str(err), friendly=IMAGE_ERRORS.get(str(err)))
+                raise YouCamError(f"Task failed: {err}", code=str(err), friendly=friendly_error(err))
             self.poll_sleep(delay)
             delay = min(delay * 1.4, 6)
         raise YouCamError(f"Task {task_id} did not finish in {max_wait}s", code="timeout")
@@ -353,18 +404,38 @@ class YouCamClient:
                 return body
             if status == "error":
                 err = data.get("error") or data.get("error_code") or body.get("error")
-                raise YouCamError(f"Task failed: {err}", code=str(err), friendly=IMAGE_ERRORS.get(str(err)))
+                raise YouCamError(f"Task failed: {err}", code=str(err), friendly=friendly_error(err))
             self.poll_sleep(delay)
             delay = min(delay * 1.4, 6)
         raise YouCamError(f"Task at {path} did not finish in {max_wait}s", code="timeout")
 
     def skin_tone(self, image_path: str | Path | None = None, file_id: str | None = None,
-                  strictness: str = "high") -> "ToneResult":
+                  strictness: str | None = None) -> "ToneResult":
         """AI Facial Color Tones Analyzer. Returns the measured colours; the API returns no
-        undertone (app/undertone.py derives one from skin_color)."""
+        undertone (app/undertone.py derives one from skin_color).
+
+        Sent at `strictness` (default: tone_strictness(), the most lenient documented level). If
+        YouCam refuses that value as an invalid parameter (a request error: no task runs, nothing
+        is charged), the next stricter level is tried, up to MAX_AUTO_STRICTNESS and no further.
+        The photo is uploaded once. The level that worked is on the result."""
+        start = strictness if strictness in TONE_STRICTNESS_LEVELS else tone_strictness()
+        i0 = TONE_STRICTNESS_LEVELS.index(start)
+        last = max(i0, TONE_STRICTNESS_LEVELS.index(MAX_AUTO_STRICTNESS))
         fid = file_id or self.upload(image_path)
-        task_id, body = self.run_feature(SKIN_TONE, {"src_file_id": fid, "face_angle_strictness_level": strictness})
-        return normalize_tone(body, task_id)
+        self.tone_attempts = []
+        for level in TONE_STRICTNESS_LEVELS[i0:last + 1]:
+            self.tone_attempts.append(level)
+            try:
+                task_id, body = self.run_feature(SKIN_TONE, {"src_file_id": fid, "face_angle_strictness_level": level})
+            except YouCamError as e:
+                if is_invalid_parameter(e) and level != TONE_STRICTNESS_LEVELS[last]:
+                    log.warning("Skin Tone refused strictness %r as an invalid parameter; trying the next level.", level)
+                    continue
+                raise
+            res = normalize_tone(body, task_id)
+            res.strictness = level
+            return res
+        raise AssertionError("unreachable")  # pragma: no cover - the last level always returns or raises
 
     def makeup_vto(self, effects: list[dict[str, Any]], image_path: str | Path | None = None,
                    file_id: str | None = None) -> "VtoResult":
@@ -402,10 +473,11 @@ class ToneResult:
     colors: dict[str, Any]
     face_quality: dict[str, Any]
     raw: dict[str, Any] | None = None
+    strictness: str | None = None    # the face_angle_strictness_level YouCam accepted
 
     def to_dict(self) -> dict[str, Any]:
         return {"task_id": self.task_id, "skin_color": self.skin_color, "colors": dict(self.colors),
-                "face_quality": dict(self.face_quality)}
+                "face_quality": dict(self.face_quality), "strictness": self.strictness}
 
 
 def normalize_tone(payload: dict[str, Any], task_id: str | None = None) -> ToneResult:

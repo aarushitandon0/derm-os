@@ -1,0 +1,111 @@
+{
+  "source": "live scan 2026-11-01",
+  "synthetic": false,
+  "label": "Demo data",
+  "note": "Values from one live YouCam scan of a real face (window light, morning): skin analysis (skin_type + 7 concerns, SD) and Skin Tone (face_angle_strictness_level flexible). Values only: no photo, no mask or render, no task id. The demo persona's history and shelf stay fictional.",
+  "zones": {
+    "t_zone": {
+      "type": "oily",
+      "redness": false
+    },
+    "u_zone": {
+      "type": "normal",
+      "redness": false
+    }
+  },
+  "raw_scores": {
+    "texture": 91.31034016609192,
+    "oiliness": 70.19892120361328,
+    "radiance": 88.50963115692139,
+    "redness": 86.21255493164062,
+    "pore": 76.87488901615143,
+    "acne": 86.38593,
+    "moisture": 58.21594595909119
+  },
+  "skin_color": "#8e684e",
+  "undertone": {
+    "tone": "warm-neutral",
+    "depth": "tan",
+    "lab": {
+      "L": 47.2,
+      "a": 11.8,
+      "b": 20.6,
+      "hue": 60.3
+    },
+    "rule_version": "undertone-1.0"
+  },
+  "skin": {
+    "data": {
+      "task_status": "success",
+      "results": {
+        "output": [
+          {
+            "type": "texture",
+            "raw_score": 91.31034016609192,
+            "ui_score": 87
+          },
+          {
+            "type": "oiliness",
+            "raw_score": 70.19892120361328,
+            "ui_score": 76
+          },
+          {
+            "type": "radiance",
+            "raw_score": 88.50963115692139,
+            "ui_score": 84
+          },
+          {
+            "type": "redness",
+            "raw_score": 86.21255493164062,
+            "ui_score": 83
+          },
+          {
+            "type": "pore",
+            "raw_score": 76.87488901615143,
+            "ui_score": 79
+          },
+          {
+            "type": "acne",
+            "raw_score": 86.38593,
+            "ui_score": 83
+          },
+          {
+            "type": "moisture",
+            "raw_score": 58.21594595909119,
+            "ui_score": 73
+          },
+          {
+            "type": "skin_type",
+            "region": "whole",
+            "skin_type": "Combination"
+          },
+          {
+            "type": "skin_type",
+            "region": "t_zone",
+            "skin_type": "Oily"
+          },
+          {
+            "type": "skin_type",
+            "region": "u_zone",
+            "skin_type": "Normal"
+          }
+        ]
+      }
+    }
+  },
+  "tone": {
+    "data": {
+      "task_status": "success",
+      "results": {
+        "color": {
+          "skin_color": "#8e684e"
+        }
+      }
+    }
+  },
+  "answers": {
+    "finish": "dewy",
+    "history": "use",
+    "budget": "any"
+  }
+}

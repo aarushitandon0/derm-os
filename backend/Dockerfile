@@ -25,6 +25,8 @@ COPY scripts ./scripts
 # The face model is downloaded at BUILD time (about 230 KB), so a cold start never fetches it.
 # The detector itself is created once, on the first scan (app/facecrop.get_detector).
 RUN python -c "from app.facecrop import ensure_model; print('face model:', ensure_model())"
+# The head-pose model for the free basket precheck (app/pose.py, about 3.6 MB), also at build time.
+RUN python -c "from app.pose import ensure_model; print('pose model:', ensure_model())"
 
 # Public-demo defaults. Render's dashboard values override these.
 ENV DEMO_MODE=1 \

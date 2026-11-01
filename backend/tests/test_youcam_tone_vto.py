@@ -50,7 +50,8 @@ def test_skin_tone_upload_task_poll(photo):
     res = c.skin_tone(photo)
     assert res.task_id == "T9" and res.skin_color == "#b9947c" and res.face_quality["has_face"] is True
     task = next(s for s in seen if s[1] == "/s2s/v2.0/task/skin-tone-analysis")
-    assert task[2] == {"src_file_id": "F1", "face_angle_strictness_level": "high"}
+    assert task[2] == {"src_file_id": "F1", "face_angle_strictness_level": "flexible"}
+    assert res.strictness == "flexible"
     assert task[3] == "Bearer k"
     put = next(s for s in seen if s[1] == "/put")
     assert put[3] is None                      # the presigned upload never carries the key

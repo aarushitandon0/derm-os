@@ -302,9 +302,11 @@ def test_riya_full_basket():
                                                     "Matches your finish"]
 
 
-def test_demo_face_is_synthetic_and_labelled():
-    f = load_face("riya")
-    assert f["synthetic"] is True and f["label"] == "Demo data"
+def test_demo_face_is_labelled_recorded_values_with_a_synthetic_fallback():
+    from app.demo_faces import DEMO_FACES
+    f = load_face("riya")      # fixtures/riya/basket_face.json: values from the 2026-11-01 live scan
+    assert f["synthetic"] is False and f["label"] == "Demo data" and f["source"] == "live scan 2026-11-01"
+    assert DEMO_FACES["riya"]["synthetic"] is True and DEMO_FACES["riya"]["label"] == "Demo data"
     assert load_face("../x") is None and load_face("nobody") is None
 
 

@@ -95,7 +95,7 @@ def test_questions_report_what_is_on_record(env):
     m, _ = env
     m.build_scene("riya-basket")
     q = TestClient(m.app).get("/api/basket/questions").json()
-    assert [x["id"] for x in q["questions"]] == ["finish", "history", "budget"]
+    assert [x["id"] for x in q["questions"]] == ["finish", "history", "budget", "veins"]
     assert q["on_record"] == {"records": 2, "outcomes": 5, "bothered": 3}
 
 
@@ -128,7 +128,7 @@ def test_live_run_chains_analysis_tone_and_two_renders_then_deletes(env):
     assert "tone" in fake.calls
     assert [c[1] for c in fake.calls if isinstance(c, tuple) and c[0] == "vto"] == [0, 70]
     deletes = [c[1] for c in fake.calls if isinstance(c, tuple) and c[0] == "delete"]
-    assert deletes[:2] == ["S1", "T1"] and len(deletes) == 4
+    assert deletes[:2] == ["T1", "S1"] and len(deletes) == 4
     assert b["tryon"]["status"] == "ready" and all(lk["image"] for lk in b["tryon"]["looks"])
     assert m.units_spent()["total"] == 34.0                     # 12 + 20 + 2 x 1
     stored = m.all_("baskets")

@@ -36,6 +36,7 @@ from . import guard as G
 from . import outcomes as OC
 from . import patterns as PAT
 from . import photometa as P
+from . import pose as PO
 from . import facecrop as F
 from . import llm as L
 from . import needs as ND
@@ -46,7 +47,8 @@ from . import undertone as UT
 from . import writeback as WB
 from .fingerprint import Fingerprint, measure_normalised
 from .settings import flag
-from .youcam import (MAKEUP_VTO, SKIN_TONE, YouCamClient, YouCamError, actions_for_mode, check_unit_reserve,
+from .youcam import (MAKEUP_VTO, SKIN_TONE, UNUSABLE_PHOTO_ERRORS, YouCamClient, YouCamError, actions_for_mode,
+                     check_unit_reserve, is_face_angle_error,
                      delete_task_quietly, download_masks, download_render, normalize, scan_cost_from,
                      strip_urls, validate_actions)
 
@@ -147,12 +149,17 @@ def hold_units(units: float) -> tuple[str | None, str | None]:
         return hid, None
 
 
-def settle_units(hid: str | None, spent: bool) -> None:
-    """A scan that went through stays counted; one that failed (YouCam doesn't charge) is released."""
+def settle_units(hid: str | None, spent: bool, units: float | None = None) -> None:
+    """A scan that went through stays counted; one that failed (YouCam doesn't charge) is released.
+    `units`: what was actually charged, when a chained run spent only part of what it held."""
     if not hid:
         return
+    if spent and units is not None and units <= 0:
+        spent = False
     with _SPEND_LOCK, _db() as con:
-        if spent:
+        if spent and units is not None:
+            con.execute("UPDATE spend SET state = 'spent', units = ? WHERE id = ?", (units, hid))
+        elif spent:
             con.execute("UPDATE spend SET state = 'spent' WHERE id = ?", (hid,))
         else:
             con.execute("DELETE FROM spend WHERE id = ?", (hid,))
@@ -1124,7 +1131,17 @@ BASKET_QUESTIONS = [
      "why": "Over-budget products are skipped while something under it fits.",
      "choices": [{"value": "under_700", "label": "Under ₹700"}, {"value": "under_1000", "label": "Under ₹1,000"},
                  {"value": "any", "label": "Any price"}]},
+    {"id": "veins", "text": UT.VEINS_QUESTION, "skippable": True,
+     "why": "Only used if your photo can't give your skin colour: your shades then follow this answer.",
+     "choices": [{"value": "green", "label": "Green"}, {"value": "blue_purple", "label": "Blue / purple"},
+                 {"value": "mix", "label": "A mix / can't tell"}]},
 ]
+TONE_FALLBACK_NOTICE = ("We couldn't read your skin colour from this photo. {fix} Your skin scan is kept, and your "
+                        "undertone comes from your answer about your wrist veins.")
+TONE_FALLBACK_NOTICE_NO_ANSWER = ("We couldn't read your skin colour from this photo. {fix} Your skin scan is kept. "
+                                  "Answer the wrist-vein question so your shades follow your undertone; until then "
+                                  "they are neutral, the middle of the range.")
+TRYON_FAILED_LINE = "The try-on preview couldn't be made this time. Your basket is unchanged."
 
 
 class BasketIn(BaseModel):
@@ -1179,9 +1196,32 @@ def basket(body: BasketIn):
     return _replay_basket(body.persona, answers, "demo_persona")
 
 
+def _photo_check(prep: Prepared) -> dict:
+    """The free precheck for a basket photo (app/pose.py): pose from the browser when it sent
+    one, otherwise measured here on the crop YouCam will see; light from the fingerprint."""
+    fp = prep.fp
+    if fp.yaw is not None and fp.pitch is not None and fp.roll is not None:
+        pose = PO.Pose(float(fp.yaw), float(fp.pitch), float(fp.roll), source="client")
+    else:
+        pose = PO.estimate(prep.norm.image)
+    bad = PO.check(pose, fp.luminance)
+    return {"ok": bad is None, "code": bad[0] if bad else None, "message": bad[1] if bad else None,
+            "pose": pose.to_dict() if pose else None, "luminance": fp.luminance, "rule": PO.thresholds()}
+
+
+def _has_undertone_answer(answers: dict) -> bool:
+    return answers.get("undertone") in UT.FAMILIES or answers.get("veins") in UT.VEINS
+
+
 def _live_basket(prep: Prepared, answers: dict) -> dict | None:
-    """One live run: skin analysis (skin_type + 7 concerns), skin tone, then two try-on renders.
-    Returns None (and the caller replays) when the balance floor or the judge caps say no."""
+    """One live run, cheapest refusal first: skin tone, then skin analysis (skin_type + 7
+    concerns), then two try-on renders. Returns a "_replay" marker when the balance floor or the
+    judge caps say no.
+
+    Always an answer: a photo YouCam can't use at all stops before the analysis is paid for. A
+    tone check that only refuses the photo (a face angle, say) doesn't stop the run: the basket is
+    built with the undertone from the wrist-vein answer, labelled "from your answers". A try-on
+    that fails leaves the basket as it is. Only what YouCam actually charged is counted."""
     client = YouCamClient()
     skin_cost = scan_cost_from({}, client.version, DF.BASKET_ACTIONS)[0]
     try:
@@ -1197,51 +1237,110 @@ def _live_basket(prep: Prepared, answers: dict) -> dict | None:
     hold, capped = hold_units(total)
     if capped:
         return {"_replay": capped, "_notice": G.cap_message(capped)}
-    spent_any = False
+    spent = 0.0
     task_ids: list[str] = []
+    tone = None
+    notice = None
+    tone_info: dict = {}
+    tryon_failed = False
     try:
         check_unit_reserve(client, unit_reserve(), total, balance=bal)
-        log.info("YouCam basket run: skin %s + tone %s + 2 x try-on %s = %s units; balance %s.",
-                 skin_cost, tone_cost, vto_cost, total, bal)
+        log.info("YouCam basket run: tone %s + skin %s + 2 x try-on %s = %s units; balance %s.",
+                 tone_cost, skin_cost, vto_cost, total, bal)
+        try:
+            tone = client.skin_tone(prep.norm_path)
+            spent += tone_cost
+            task_ids.append(tone.task_id)
+            tone_info = {"ok": True, "strictness": tone.strictness}
+        except YouCamError as e:
+            # A failed task is not charged. A photo that can't be used at all stops here,
+            # before the analysis is paid for.
+            if e.code in UNUSABLE_PHOTO_ERRORS:
+                raise HTTPException(422, {"code": "photo_unusable", "message": e.friendly})
+            if not (is_face_angle_error(e.code) or str(e.code or "").startswith("error_")):
+                raise
+            log.info("Skin Tone refused the photo (%s); undertone from the answers.", e.code)
+            tried = getattr(client, "tone_attempts", None) or [None]
+            tone_info = {"ok": False, "code": e.code, "strictness": tried[-1]}
+            tmpl = TONE_FALLBACK_NOTICE if _has_undertone_answer(answers) else TONE_FALLBACK_NOTICE_NO_ANSWER
+            notice = tmpl.format(fix=e.friendly)
         skin = client.analyze(prep.norm_path, DF.BASKET_ACTIONS)
-        spent_any = True
+        spent += skin_cost
         task_ids.append(skin.task_id)
-        tone = client.skin_tone(prep.norm_path)
-        task_ids.append(tone.task_id)
-        first = _basket_from(skin.raw, tone.raw, answers, demo_=False, source="live")
+        tone_raw = tone.raw if tone else None
+        first = _basket_from(skin.raw, tone_raw, answers, demo_=False, source="live")
         renders: dict[str, str] = {}
         cap_id = first["id"]
         shade = (first["tryon"] or {}).get("shade")
         for req in (first["tryon"] or {}).get("requests", []) if shade else []:
-            vto = client.makeup_vto(req["body"]["effects"], image_path=prep.norm_path)
+            try:
+                vto = client.makeup_vto(req["body"]["effects"], image_path=prep.norm_path)
+            except YouCamError as e:
+                log.warning("Try-on render failed (%s); the basket is kept.", e.code)
+                tryon_failed = True
+                continue
+            spent += vto_cost
             task_ids.append(vto.task_id)
             saved = download_render(vto.image_url, MEDIA_DIR / cap_id / f"tryon_{req['look']}",
                                     getattr(client, "upload_http", None))
             if saved:
                 renders[req["look"]] = _media_url(saved)
+            else:
+                tryon_failed = True
     except YouCamError as e:
-        settle_units(hold, spent=spent_any)
+        settle_units(hold, spent=spent > 0, units=spent)
         if e.code == "unit_reserve":
             raise HTTPException(402, e.friendly)
         raise HTTPException(502 if e.code not in (None, "no_key") else 503, e.friendly)
     except Exception:
-        settle_units(hold, spent=spent_any)
+        settle_units(hold, spent=spent > 0, units=spent)
         raise
     finally:
         # Results are saved locally, so the copies at YouCam (photo + outputs) are not needed.
         deleted = [delete_task_quietly(client, t) for t in task_ids if t]
-    settle_units(hold, spent=True)
+    settle_units(hold, spent=True, units=spent)
     delete("baskets", first["id"])
-    return _basket_from(skin.raw, tone.raw, answers, demo_=False, source="live", renders=renders,
-                        extra={"youcam": {"task_ids": task_ids, "deleted": all(deleted), "cost_units": total}})
+    out = _basket_from(skin.raw, tone_raw, answers, demo_=False, source="live", renders=renders,
+                       extra={"youcam": {"task_ids": task_ids, "deleted": all(deleted), "cost_units": spent,
+                                         "tone": tone_info}})
+    if tryon_failed and out["tryon"].get("status") != "ready":
+        out["tryon"]["line"] = TRYON_FAILED_LINE
+    out["notice"] = notice
+    # The raw YouCam code stays in the stored row; the user only ever sees the plain notice.
+    out["tone_check"] = {"ok": bool(tone_info.get("ok")), "strictness": tone_info.get("strictness")}
+    return out
+
+
+@app.post("/api/basket/precheck")
+async def basket_precheck(request: Request, image: UploadFile = File(...),
+                          yaw: float | None = Form(None), pitch: float | None = Form(None),
+                          roll: float | None = Form(None)):
+    """Free check of one basket photo: one face fully in frame, not a side profile, not too dark.
+    Zero YouCam calls, nothing stored. Returns pass, or one plain fix."""
+    PRECHECK_LIMITER.check(G.client_ip(request))
+    raw = await image.read(P.MAX_UPLOAD_BYTES + 1)
+    try:
+        prep = _prepare(raw, "sd", None, "upload", yaw, pitch, roll)
+    except (F.Refusal, P.UploadRefused) as e:
+        return {"ok": False, "code": e.code, "message": e.fix, "pose": None, "luminance": None,
+                "rule": PO.thresholds()}
+    except F.DetectorUnavailable as e:
+        raise _refusal(e)
+    try:
+        return _photo_check(prep)
+    finally:
+        prep.cleanup()
 
 
 @app.post("/api/basket/scan")
 async def basket_scan(request: Request, image: UploadFile | None = File(None),
                       answers: str = Form("{}"), persona: str = Form("riya"),
+                      yaw: float | None = Form(None), pitch: float | None = Form(None),
+                      roll: float | None = Form(None),
                       x_live_passcode: str | None = Header(None)):
     """A selfie -> face map + basket + try-on. Live only with DEMO_MODE=0 and the passcode; any
-    other case replays the demo persona's prepared face, labelled, and never calls YouCam."""
+    other case replays the demo persona's prepared face, labelled, and never calls YouCam.
+    A live photo passes the free precheck (app/pose.py) before any unit is spent."""
     SCAN_LIMITER.check(G.client_ip(request))
     try:
         ans = json.loads(answers or "{}")
@@ -1255,10 +1354,13 @@ async def basket_scan(request: Request, image: UploadFile | None = File(None),
         return _replay_basket(persona, ans, reason or "no_photo")
     raw = await image.read()
     try:
-        prep = _prepare(raw, "sd", None, "upload")
+        prep = _prepare(raw, "sd", None, "upload", yaw, pitch, roll)
     except (F.Refusal, P.UploadRefused, F.DetectorUnavailable) as e:
         raise _refusal(e)
     try:
+        chk = _photo_check(prep)
+        if not chk["ok"]:
+            raise HTTPException(422, {"code": chk["code"], "message": chk["message"]})
         res = _live_basket(prep, ans)
     except YouCamError as e:
         raise HTTPException(503, e.friendly)

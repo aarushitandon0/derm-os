@@ -7,6 +7,12 @@ declare const process: { env: Record<string, string | undefined> };
 
 // `npm run dev` for laptop work. `npm run dev:https` to open it on a phone over
 // the LAN: phone browsers only allow the camera on https (or localhost).
+// On Vercel the API lives on Render, so a production build without VITE_API_BASE would call
+// the Vercel origin and every request would 404. Fail that build with a clear message instead.
+if (process.env.VERCEL && !(process.env.VITE_API_BASE ?? "").trim()) {
+  throw new Error("Set VITE_API_BASE to the Render API URL (e.g. https://dermos-api.onrender.com) in Vercel -> Settings -> Environment Variables.");
+}
+
 export default defineConfig(({ mode }) => ({
   plugins: [react(), ...(mode === "https" ? [basicSsl()] : [])],
   server: {

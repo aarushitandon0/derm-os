@@ -1,72 +1,84 @@
-# Devpost submission (draft)
+# Devpost submission
 
-Fill in every `[placeholder]` from `backend/results/report.md` and the deploy before submitting.
-Keep it to what the build does today.
+Fill in the two `[placeholder]` links after the deploy and the upload. Keep it to what the build does today.
 
 ---
 
 ## derm//os
 
-**Same face, same light, one change, honest verdict.**
+**Shop by your face, not by the hype.**
 
-### Inspiration
+### The problem
 
-You buy a serum, take a selfie two weeks later, and the score is 5 points better. Was that the serum, or the lamp? Skin scores move on their own between two casual photos, and nothing tells you how much. We wanted an app that knows when it can't tell you yet.
+On sale day, people buy what's trending, not what suits their face, and opened skincare usually can't be sent back.
+
+- **37%** of women in a Skin Rocks survey said they buy skincare because of buzzwords they don't understand. ([source](https://britbrief.co.uk/tech/apps/37-of-women-buy-skincare-buzzwords-without-understanding.html))
+- **65%** of women in an Ipsos survey for Boots reported frustration finding the right foundation shade. ([source](https://www.ipsos.com/sites/default/files/news_and_polls/2016-06/Cosmetics%20Factum%20Analysis%207274.pdf))
+- Opened skincare is often not returnable; see, for example, Nykaa's return policy. ([source](https://www.nykaaman.com/cancellation-policy/lp))
+
+So a wrong buy is money lost, and often a few itchy days as well. A chatbot can suggest a serum, but it can't measure your face, and it doesn't know that the last two products with Alcohol Denat. made you itch.
 
 ### What it does
 
-derm//os turns a skincare purchase into a small, well-run personal experiment:
+derm//os turns one selfie into a skincare basket from the store's own stock:
 
-- **Your own noise range.** Three baseline scans give each concern a range. A check-in counts as a change only when its range doesn't overlap yours.
-- **A comparability gate.** Every photo carries its conditions: brightness, light colour, face size, head angle, camera and time of day. If a check-in doesn't match the baseline, derm//os says "can't tell" and shows how to retake, instead of reporting a trend.
-- **One change at a time.** Two new leave-on products at once means "can't tell which". A reported reaction such as itching outranks any score.
-- **A rebuy line on every verdict:** "The evidence supports rebuying, if you like using it." only when comparable photos leave your range in the better direction; otherwise "Finish the trial before you rebuy", "Can't tell yet, so this isn't a reason to rebuy", or "Don't rebuy".
-- **Compare before you buy.** Your history is checked against each option's ingredient list, showing the exact label line. An incomplete label is "unknown", never a pass. "Change nothing" is always a column.
-- **A visit brief** for a clinician when something goes wrong.
+1. **Face map.** YouCam Skin Analysis measures skin type per zone. "T-zone: oily, cheeks: normal" leads to two moisturisers, not one. Top needs are shown in words, never as scores.
+2. **Your history.** Tap the ingredients you remember ("Vitamin C itched", "Azelaic acid broke me out"). Saved product history counts too.
+3. **The basket.** One card per job (cleanser, T-zone moisturiser, cheek moisturiser, sunscreen / skin tint). Each card gives three labelled reasons (From your face · From your history · Matches your finish) and says how to use the product. Every skipped product shows its exact reason, for example: "Contains Alcohol Denat., in 2 of 2 products that made you itch, sting or burn, 0 of 2 that suited you." Products you already own are marked "skip buying".
+4. **Start plan.** Patch-test first, then one new product every 2 weeks, gentlest first, with calendar reminders.
+5. **Try-on.** YouCam Makeup Try-On shows the base product on your own photo, matte and dewy, in your shade.
+6. **Paste any label.** An ingredient list from any shop is checked against your history the same way. Nothing pasted is saved.
 
-The strongest thing it ever says is "changed during this trial". It is decision support, not diagnosis.
+Also included: a **breakout helper** (what changed 2–8 weeks ago, purging or not, pause one product) and a **check-in** (one new photo compared with your first scan, in plain words). A beginner path skips the history step, and its picks and alternatives lean gentle (no fragrance, no Alcohol Denat., few actives).
 
-### The number
-
-[Headline from report.md, e.g. "With nothing changed (n photos of the same face), a fixed ±5-point rule called a change in X% of photo-pair comparisons; derm//os's pre-registered verdict did in Y% of M baseline/check-in splits. Under a warm lamp, the gate marked Z% of pairs not comparable."]
-
-The derm//os number uses the app's own verdict function with its constants fixed before the shoot. The comparisons share photos, so they aren't independent, and the analysis is ours.
+Decision support, not a diagnosis.
 
 ### How we built it
 
-- **YouCam AI Skin Analysis v2.1 (SD)**: `POST /s2s/v2.0/file` and a presigned upload, `POST /s2s/v2.1/task/skin-analysis`, polling `GET /s2s/v2.1/task/skin-analysis/{task_id}`, mask download, `POST /s2s/v2.0/task/delete` to remove the photo and outputs at YouCam, and the free `GET /s2s/v1.0/client/credit` and `GET /s2s/v2.0/credit/feature-cost` before every live scan. Decisions use `raw_score`.
-- **FastAPI + SQLite** on Python 3.12, in Docker. Every photo is cropped on the server by a local face detector (MediaPipe BlazeFace) so the face is the same width in every scan.
-- **React + TypeScript PWA**, phone first, with a live MediaPipe face guide and an auto-shutter.
-- **Rules, not a model, decide**: the noise ranges, gate, verdicts, rebuy line and exclusions are plain, tested code.
-- **Unit safety**: the public demo replays prepared scores. Live scans need a passcode and stop at 300 units total and 100 a day (then replay prepared data, and say so), with a 200-unit reserve.
+**Three YouCam APIs, each with one job:**
 
-### Honesty, engineered
+| API | Job | Units |
+| --- | --- | --- |
+| AI Skin Analysis v2.1 SD (`skin_type` + oiliness, moisture, pore, acne, redness, radiance, texture) | Zone types and needs | 12 |
+| AI Facial Color Tones Analyzer (Skin Tone) | Skin colour, from which our rule works out the undertone and shade family | 20 |
+| AI Makeup Virtual Try-On (foundation) | Matte and dewy renders on your photo | 1 each |
 
-- A **claim linter** in CI fails the build if any screen or template sentence says cause, cure, treat, diagnose, prove, guarantee, clinically, "it works", or claims a percentage improvement.
-- A **benchmark** of 115 cases written from the design before running the engine: 115 of 115 pass. We wrote it, so it isn't independent; it tests the rules, not YouCam's accuracy.
-- **docs/FACTS.md** links every README claim to the code and the test behind it, and marks the few that aren't automated.
-- The guided demo's second persona gets a positive verdict from prepared scores through the real engine, with no special case: the same scores under lamp light are "not comparable".
+**Deterministic engines** (versioned, with stored inputs and tests) take over from there:
 
-### Challenges
+- `needs`: zone types and concern scores → plain needs → ingredient targets and textures, from a curated data file with sources.
+- `undertone`: skin colour → CIELAB hue angle → warm / neutral / cool / olive, by a documented house rule, labelled as derived.
+- `basket`: picks one product per job from the store's stock by needs, finish, zone type and shade. Every pick and every skip carries its reasons.
+- `chips`: history by ingredient, with synonyms and families.
+- `startplan`: patch test, order, and 14-day spacing.
+- `lookfor`: what to look for on any label, with no brand names.
+- `pastecheck`: any pasted ingredient list goes through the same check.
+- `cartcheck`: the history check ladder (blocked, repeats a pattern, patch-test first, no conflicts, and unknown for an incomplete list).
+- `patterns`: which ingredients the products that bothered you share, and how often they also appear in products that suited you.
 
-- Getting the same face size in every photo without upscaling, recolouring or rotating anything.
-- Saying "can't tell" often enough to be honest without making the app feel useless.
-- Keeping YouCam units safe on a public demo.
+**Stack:** FastAPI + SQLite on Python 3.12 in Docker (Render), React + TypeScript PWA (Vercel), and MediaPipe for the live face guide, the server crop and a free head-pose precheck.
 
-### What we learned
+**Guard rails:** 1,100 backend tests with no network and no units; a 235-case rule benchmark (235 / 235, written by us, so not an independent evaluation); a claim linter in CI that fails the build on words like "cures", "treats", "proven" or "safe"; and docs/FACTS.md linking each claim to its code and test. Live runs need a passcode, read the real balance first, and stop at a balance floor, judge caps and a reserve.
 
-[One or two sentences from the shoot, e.g. how big the no-change range was per concern, and what the warm lamp did.]
+### Challenges we ran into
+
+Both came from our first live run on a real face:
+
+- **`skin_type` came back in a different shape.** We had coded for one `skin_type` item holding `whole` / `t_zone` / `u_zone`. The live SD response sends **one output item per region** (`{"type": "skin_type", "region": "t_zone", "skin_type": "Oily"}`). The parser now reads that shape, still accepts the documented one, and has tests for both.
+- **Skin Tone rejected a normal selfie for its face angle.** YouCam's default angle check is strict, and a slightly turned phone selfie failed. We fixed it in four steps:
+  - send the most lenient `face_angle_strictness_level` (configurable with `YOUCAM_FACE_ANGLE_STRICTNESS`), stepping stricter only on an invalid-parameter error, and never past medium;
+  - run Skin Tone **before** Skin Analysis, so a refused photo costs as little as possible;
+  - add a **free head-pose precheck** on the server, so a side profile is caught before any unit is spent;
+  - if Skin Tone still refuses, the basket is built anyway, with the undertone from one quiz question, labelled "from your answers". The shopping flow always gives an answer.
 
 ### What's next
 
-- Real repeat-scan data for the demo personas.
-- An optional language layer (already written, off in the deployed app) for typed-in history and plain-language summaries, behind a claim validator. It runs on a local Ollama server with no API key.
-- Postgres so trials survive restarts.
+- **A retailer catalogue plug-in:** any shop's stock with full ingredient lists feeds the basket, as an embeddable "Build my basket" button.
+- Postgres and object storage, so history survives restarts.
 
 ### Try it
 
-- App: [Vercel URL] → **Try the 90-second demo** (prepared data, no account)
+- App: [Vercel URL] → **Build my basket from my face** → **Use Riya's demo face** (demo data, no account, no units)
 - Code: https://github.com/aarushitandon0/derm-os
 - Video: [YouTube URL]
 
-All products in the app are fictional.
+All products and brands in the app are fictional.

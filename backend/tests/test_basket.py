@@ -141,7 +141,9 @@ def test_an_empty_history_is_nothing_to_check_not_a_pass():
 def test_incomplete_inci_is_never_picked():
     b = riya()
     s = next(s for s in b["skipped"] if s["product_id"] == "mo-07")
-    assert s["kind"] == "unknown" and s["reason"].startswith("Ingredient list incomplete → unknown")
+    assert s["kind"] == "unknown" and s["label"] == "Ingredient list incomplete → unknown"
+    # The label is printed once: the reason line under it doesn't repeat it.
+    assert "Ingredient list incomplete" not in s["reason"]
     assert "mo-07" not in picks(b).values()
 
 
@@ -321,3 +323,27 @@ def test_store_has_16_to_20_tagged_fictional_products():
             assert tags["shades"] and all({"depth", "undertone", "hex"} <= set(s) for s in tags["shades"])
     assert any(not p["inci_complete"] for p in prods)
     assert any("Alcohol Denat." in p["inci"] for p in prods if p["shop"]["job"] != "serum")
+
+
+# ---------------------------------------------------------------- beginner alternatives
+BEGINNER_CASES = [(t, u, w, fin) for t, u, w in (("Oily", "Dry", "Combination"), ("Dry", "Dry", "Dry"),
+                                                  ("Oily", "Oily", "Oily"), ("Normal", "Normal", "Normal"))
+                  for fin in ("dewy", "natural", "matte")]
+
+
+@pytest.mark.parametrize("t,u,w,fin", BEGINNER_CASES)
+def test_beginner_also_fits_has_no_fragrance_or_alcohol_denat(t, u, w, fin):
+    b = make(skin(t, u, w), tone(), {"finish": fin, "history": "new"}, history=False, shelf=[])
+    for j in b["jobs"]:
+        for alt in j["also_fits"]:
+            assert not BK.harsh_for_beginner(CAT[alt["product_id"]]), (j["title"], alt["product_id"])
+
+
+def test_the_beginner_filter_is_what_removes_them():
+    """Without "new", at least one of these baskets offers a fragranced or Alcohol Denat. alternative,
+    so the beginner test above is checking something."""
+    seen = False
+    for t, u, w, fin in BEGINNER_CASES:
+        b = make(skin(t, u, w), tone(), {"finish": fin, "history": "ignore"}, history=False, shelf=[])
+        seen |= any(BK.harsh_for_beginner(CAT[a["product_id"]]) for j in b["jobs"] for a in j["also_fits"])
+    assert seen

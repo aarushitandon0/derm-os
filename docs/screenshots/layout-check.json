@@ -1,102 +1,90 @@
 [
   {
-    "name": "01-landing.png",
+    "name": "01-home.png",
     "sideways": false,
     "scrollWidth": 390,
     "small": []
   },
   {
-    "name": "02-guided-demo-start.png",
+    "name": "02-basket-start.png",
     "sideways": false,
     "scrollWidth": 390,
     "small": []
   },
   {
-    "name": "03-guided-history.png",
+    "name": "03-questions-and-history-chips.png",
     "sideways": false,
     "scrollWidth": 390,
     "small": []
   },
   {
-    "name": "04-compare-blocked-inci.png",
-    "sideways": false,
-    "scrollWidth": 429,
-    "small": []
-  },
-  {
-    "name": "05-trial-baseline.png",
+    "name": "04-riya-basket-full.png",
     "sideways": false,
     "scrollWidth": 390,
     "small": []
   },
   {
-    "name": "07-not-comparable-reguide.png",
+    "name": "05-riya-face-map.png",
     "sideways": false,
     "scrollWidth": 390,
     "small": []
   },
   {
-    "name": "08-evidence-riya-day14-rebuy.png",
+    "name": "06-riya-basket-cards.png",
     "sideways": false,
     "scrollWidth": 390,
     "small": []
   },
   {
-    "name": "09-stop-card.png",
+    "name": "07-riya-skipped-with-reasons.png",
     "sideways": false,
     "scrollWidth": 390,
     "small": []
   },
   {
-    "name": "10-visit-brief.png",
+    "name": "08-riya-start-plan.png",
     "sideways": false,
     "scrollWidth": 390,
     "small": []
   },
   {
-    "name": "11-evidence-meera-moved-rebuy.png",
+    "name": "09-paste-a-label.png",
     "sideways": false,
     "scrollWidth": 390,
     "small": []
   },
   {
-    "name": "06-capture-simulated.png",
+    "name": "10-try-on-matte-vs-dewy.png",
     "sideways": false,
     "scrollWidth": 390,
     "small": []
   },
   {
-    "name": "06b-capture-warm-light-warning.png",
+    "name": "11-breakout-helper.png",
     "sideways": false,
     "scrollWidth": 390,
     "small": []
   },
   {
-    "name": "12a-upload-choose.png",
+    "name": "12-beginner-questions.png",
     "sideways": false,
     "scrollWidth": 390,
     "small": []
   },
   {
-    "name": "12b-upload-confirm-sitting.png",
+    "name": "13-beginner-basket-full.png",
     "sideways": false,
     "scrollWidth": 390,
     "small": []
   },
   {
-    "name": "12c-upload-duplicate-refused.png",
+    "name": "14-beginner-basket-cards.png",
     "sideways": false,
     "scrollWidth": 390,
     "small": []
   },
   {
-    "name": "12d-upload-ready-to-scan.png",
-    "sideways": false,
-    "scrollWidth": 390,
-    "small": []
-  },
-  {
-    "name": "12e-upload-saved.png",
+    "name": "15-beginner-start-plan.png",
     "sideways": false,
     "scrollWidth": 390,
     "small": []

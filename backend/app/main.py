@@ -1129,7 +1129,9 @@ BASKET_QUESTIONS = [
      "why": "Your saved history is checked against every label, so nothing that bothered you comes back.",
      "skippable": True,
      "choices": [{"value": "use", "label": "Check against my history"},
-                 {"value": "ignore", "label": "Skip for this basket"}]},
+                 {"value": "ignore", "label": "Skip for this basket"},
+                 # A beginner: no history step, and a gentle start (app/basket.py GENTLE_LABEL).
+                 {"value": "new", "label": "Nothing tried yet"}]},
     {"id": "budget", "text": "Budget per product (optional)", "skippable": True,
      "why": "Over-budget products are skipped while something under it fits.",
      "choices": [{"value": "under_700", "label": "Under ₹700"}, {"value": "under_1000", "label": "Under ₹1,000"},

@@ -39,6 +39,7 @@ ENV DEMO_MODE=1 \
     JUDGE_UNIT_CAP_TOTAL=300 \
     JUDGE_UNIT_CAP_DAILY=100 \
     LLM_PROVIDER=none \
+    YOUCAM_FACE_ANGLE_STRICTNESS=flexible \
     PORT=8000
 
 RUN useradd --create-home dermos

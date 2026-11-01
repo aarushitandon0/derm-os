@@ -1,13 +1,12 @@
-// 390 px screenshots of the demo, plus a layout check on every screen.
+// 390 px screenshots of the strategy v2 flow (riya + beginner), plus a layout check on every screen.
 //
-//   1. API in demo mode:   cd backend; $env:DEMO_MODE="1"; python -m uvicorn app.main:app --host 127.0.0.1 --port 8010
-//   2. App (dev build, for the simulated camera):
-//        cd frontend; $env:DERMOS_API_PROXY="http://127.0.0.1:8010"; npx vite --host 127.0.0.1 --port 5180
+//   1. API in demo mode, YouCam key empty:
+//        cd backend; $env:DEMO_MODE="1"; $env:YOUCAM_API_KEY=""; python -m uvicorn app.main:app --host 127.0.0.1 --port 8010
+//   2. App: cd frontend; $env:DERMOS_API_PROXY="http://127.0.0.1:8010"; npx vite --host 127.0.0.1 --port 5180
 //   3. node scripts/screenshots.mjs [--base http://127.0.0.1:5180] [--out ../docs/screenshots]
 //
 // Drives headless Chrome (or Edge) over the DevTools protocol with Node's built-in WebSocket: no
-// installs, no camera, no face photo (the capture screens use the dev-only simulated camera,
-// `&preview=`). Clicks through the real guided demo. Reduced motion is on, so nothing is mid-animation.
+// installs, no camera, no face photo (the demo faces are prepared data). Reduced motion is on.
 // For every screen it reports sideways scroll and tap targets smaller than 44 x 44 px.
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
@@ -100,6 +99,39 @@ class Page {
       return { sideways, scrollWidth: document.documentElement.scrollWidth, small };
     })()`);
   }
+  /** Scroll an element into view and capture just that element (full width). */
+  async shotEl(name, selector) {
+    const r = await this.eval(`(() => { const el = document.querySelector(${JSON.stringify(selector)});
+      if (!el) return null; const b = el.getBoundingClientRect();
+      return { y: Math.max(0, b.top + window.scrollY - 12), h: b.height + 24 }; })()`);
+    if (!r) throw new Error(`No element ${selector}`);
+    const { data } = await this.send("Page.captureScreenshot", {
+      format: "png", captureBeyondViewport: true, clip: { x: 0, y: r.y, width: W, height: Math.ceil(r.h), scale: 1 },
+    });
+    writeFileSync(join(OUT, name), Buffer.from(data, "base64"));
+    const a = await this.audit();
+    report.push({ name, ...a });
+    console.log(`${name}: ${a.sideways ? "SIDEWAYS SCROLL " + a.scrollWidth + "px" : "no sideways scroll"}, ${a.small.length} small target(s)`);
+  }
+  /** Click the first element matching a CSS selector whose text includes `text` (or any, if empty). */
+  async tap(selector, text = "") {
+    const ok = await this.eval(`(() => {
+      const el = [...document.querySelectorAll(${JSON.stringify(selector)})].find((b) => b.innerText.includes(${JSON.stringify(text)}));
+      if (!el) return false; el.scrollIntoView({ block: "center" }); el.click(); return true; })()`);
+    if (!ok) throw new Error(`No ${selector} with "${text}"`);
+    await sleep(1200);
+  }
+  async waitSel(selector, ms = 15000) {
+    const t0 = Date.now();
+    while (Date.now() - t0 < ms) {
+      if (await this.eval(`!!document.querySelector(${JSON.stringify(selector)})`)) return;
+      await sleep(200);
+    }
+    throw new Error(`Timed out waiting for ${selector}`);
+  }
+  async api(path) {
+    return this.eval(`fetch(${JSON.stringify(path)}, { method: "POST" }).then((r) => r.ok)`);
+  }
   async shot(name) {
     // Full-page capture: a fixed tab bar would be stamped mid-page, so put it at the end of the page.
     await this.eval(`(() => { let s = document.getElementById("shot-css"); if (!s) { s = document.createElement("style");
@@ -144,81 +176,74 @@ async function main() {
     await p.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
     await p.send("Page.navigate", { url: `${BASE}/#/` });
     await sleep(1500);
-    // A fresh start: first launch, prepared data reset.
-    await p.eval(`fetch("/api/demo/reset", {method: "POST"}).then(() => { localStorage.clear(); location.reload(); return true; })`);
-    await sleep(2000);
+    // A fresh start: prepared data reset, first launch skipped.
+    await p.eval(`fetch("/api/demo/reset", {method: "POST"}).then(() => { localStorage.clear();
+      localStorage.setItem("dermos.onboarded", "true"); location.reload(); return true; })`);
+    await sleep(2500);
 
-    await p.waitText("Same face, same light");
-    await p.shot("01-landing.png");
+    // ---- Riya: selfie -> face map -> history -> basket -> start plan -> try-on
+    await p.go("/");
+    await p.waitSel(".hero");
+    await p.shot("01-home.png");
 
-    await p.click("Try the 90-second demo");
-    await p.waitText("The 90-second demo");
-    await p.shot("02-guided-demo-start.png");
+    await p.tap(".hero");
+    await p.waitSel(".choices");
+    await p.shot("02-basket-start.png");
 
-    await p.click("Start the demo");
-    await p.waitText("Step 1 of 8");
-    await p.waitText("Velvet Rose");
-    await p.shot("03-guided-history.png");
-
-    await p.click("Next");
-    await p.waitText("Step 2 of 8");
-    await p.waitText("Label line");
-    await p.shot("04-compare-blocked-inci.png");
-
-    await p.click("Next");
-    await p.waitText("Step 3 of 8");
+    await p.tap(".row", "Use Riya's demo face");
+    await p.waitSel("[role=radiogroup], .radiogroup");
     await sleep(800);
-    await p.shot("05-trial-baseline.png");
+    await p.shot("03-questions-and-history-chips.png");
 
-    await p.click("Next");
-    await p.waitText("Step 4 of 8");
-    await p.waitText("Not comparable");
-    await p.shot("07-not-comparable-reguide.png");
+    await p.tap(".btn", "Build my basket");
+    await p.waitSel(".bcards");
+    await sleep(800);
+    await p.shot("04-riya-basket-full.png");
+    await p.shotEl("05-riya-face-map.png", ".facemap");
+    await p.shotEl("06-riya-basket-cards.png", ".bcards");
+    await p.shotEl("07-riya-skipped-with-reasons.png", ".skips");
+    await p.shotEl("08-riya-start-plan.png", ".plan");
 
-    await p.click("Next");
-    await p.waitText("Step 5 of 8");
-    await p.waitText("Rebuy?");
-    await p.shot("08-evidence-riya-day14-rebuy.png");
+    // Paste any label: a fragranced label, checked against riya's history.
+    await p.eval(`(() => { const t = document.querySelector(".paste__text");
+      const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set;
+      set.call(t, "Aqua, Glycerin, Alcohol Denat., Niacinamide, Parfum, Linalool");
+      t.dispatchEvent(new Event("input", { bubbles: true })); return true; })()`);
+    await sleep(300);
+    await p.tap("button", "Check it");
+    await p.waitSel(".pasteres");
+    await p.shotEl("09-paste-a-label.png", ".paste");
 
-    await p.click("Next");
-    await p.waitText("Step 6 of 8");
-    await p.waitText("Rebuy?");
-    await p.shot("09-stop-card.png");
+    await p.tap(".btn", "See the finish on you");
+    await p.waitSel(".tryon");
+    await sleep(600);
+    await p.shot("10-try-on-matte-vs-dewy.png");
 
-    await p.click("Next");
-    await p.waitText("Step 7 of 8");
-    await p.waitText("Key points");
-    await p.shot("10-visit-brief.png");
+    // ---- Breakout helper (prepared scene)
+    await p.api("/api/demo/scene/riya-breakout");
+    await p.go("/");
+    await p.tap(".moment__label", "broke out");
+    await sleep(800);
+    if (!(await p.eval(`!!document.querySelector(".symchip.is-on")`))) await p.tap(".symchip", "Cheeks");
+    await p.tap(".symchip--none");
+    await p.tap(".btn", "What changed?");
+    await p.waitSel(".ranking", 20000);
+    await p.shot("11-breakout-helper.png");
 
-    await p.click("Next");
-    await p.waitText("Step 8 of 8");
-    await p.waitText("Redness dropped beyond your usual variation");
-    await p.shot("11-evidence-meera-moved-rebuy.png");
-
-    // Capture with the dev-only simulated camera (no camera, no face photo).
-    await p.click("Finish");
-    await p.go("/capture?mode=checkin&trial=demo-riya-lamp&preview=countdown");
-    await sleep(1200);
-    await p.shot("06-capture-simulated.png");
-    await p.go("/capture?mode=checkin&trial=demo-riya-lamp&preview=warm");
-    await sleep(1200);
-    await p.shot("06b-capture-warm-light-warning.png");
-
-    // Upload photos instead: simulated precheck states (dev only, no photos, nothing sent).
-    for (const [kind, text, file] of [
-      ["upload-pick", "Upload your first photos", "12a-upload-choose.png"],
-      ["upload-confirm", "Were these taken within a few minutes", "12b-upload-confirm-sitting.png"],
-      ["upload-fix", "These look like the same photo", "12c-upload-duplicate-refused.png"],
-      ["upload-ready", "passed every check", "12d-upload-ready-to-scan.png"],
-      ["upload-done", "Uploaded photo", "12e-upload-saved.png"],
-    ]) {
-      await p.go("/learn"); // leave the capture route so each simulated state mounts fresh
-      await sleep(300);
-      await p.go(`/capture?mode=baseline&trial=demo-riya-lamp&preview=${kind}`);
-      await p.waitText(text);
-      await sleep(400);
-      await p.shot(file);
-    }
+    // ---- Beginner: nothing tried yet, gentle start
+    await p.go("/");
+    await p.tap(".hero");
+    await p.waitSel(".choices");
+    await p.tap(".row", "Use a beginner demo face");
+    await p.waitSel("[role=radiogroup], .radiogroup");
+    await sleep(800);
+    await p.shot("12-beginner-questions.png");
+    await p.tap(".btn", "Build my basket");
+    await p.waitSel(".bcards");
+    await sleep(800);
+    await p.shot("13-beginner-basket-full.png");
+    await p.shotEl("14-beginner-basket-cards.png", ".bcards");
+    await p.shotEl("15-beginner-start-plan.png", ".plan");
 
     writeFileSync(join(OUT, "layout-check.json"), JSON.stringify(report, null, 2));
     const bad = report.filter((r) => r.sideways);

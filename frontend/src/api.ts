@@ -226,15 +226,104 @@ export interface BasketJob {
   why: BasketWhy[];
   also_fits: { product_id: string; name: string; brand: string; price_inr: number; patch_test_first: boolean }[];
   note: string | null;
+  /** "Gentle start for new routines" on a beginner's basket. */
+  label?: string;
+  /** "Worked for you" lines and purge notes from the ingredient chips. */
+  tried?: string[];
+  look_for: LookFor;
+}
+/** What to look for on any label for the same job (app/lookfor.py). Never names a brand. */
+export interface LookFor {
+  ingredients: string[];
+  texture: string | null;
+  finish: string | null;
+  shade: string | null;
+  avoid: { what: string; why: string }[];
+  worked: string[];
+  lines: string[];
+  rule_version: string;
+}
+// ---- quick history by ingredient (app/chips.py)
+export type ChipReaction = "itched" | "broke_out" | "comedones" | "suited" | "not_sure";
+export interface ChipIn {
+  chip: string;
+  reaction: ChipReaction;
+  product_name?: string;
+  confirmed_allergy?: boolean;
+  usual_spots_settled?: "yes" | "no" | "not_sure" | null;
+  purge_choice?: "purging" | "breakout" | null;
+}
+export interface ChipOut extends Required<Omit<ChipIn, "usual_spots_settled" | "purge_choice">> {
+  usual_spots_settled: "yes" | "no" | "not_sure" | null;
+  purge_choice: "purging" | "breakout" | null;
+  reaction_label: string;
+  label: string;
+  word: string;
+  line: string;
+  purge_question: string | null;
+  purge_offer: string | null;
+  purge_capable: boolean;
+}
+export interface ChipSpec {
+  id: string;
+  label: string;
+  purge_capable: boolean;
+}
+export interface ChipsState {
+  chips: ChipOut[];
+  catalogue: ChipSpec[];
+  reactions: Record<ChipReaction, string>;
+  purge_question: string;
+  rule_version: string;
+}
+// ---- start plan (app/startplan.py)
+export interface StartStep {
+  order: number;
+  product_id: string;
+  name: string;
+  job: string;
+  group: string;
+  patch_from: string;
+  patch_to: string;
+  start_on: string;
+  line: string;
+}
+export interface StartPlan {
+  title: string;
+  patch_line: string;
+  spacing_line: string;
+  steps: StartStep[];
+  keep: { product_id: string; name: string; job: string; line: string }[];
+  if_reacts: string;
+  sources: { id: string; text: string; url: string }[];
+  today: string;
+  rule_version: string;
+}
+// ---- check any product (app/pastecheck.py). Nothing is stored.
+export type PasteJob = "cleanser" | "moisturiser" | "sunscreen" | "serum";
+export interface PasteResult {
+  name: string;
+  job: PasteJob;
+  rung: string;
+  verdict_line: string;
+  unknown: boolean;
+  complete: boolean;
+  lines: string[];
+  parse_notes: string[];
+  sources: { key: "history" | "tried" | "fit"; label: string; lines: string[] }[];
+  next_step: string;
+  stored: false;
+  rule_version: string;
 }
 export interface BasketSkip {
   product_id: string;
   name: string;
   brand: string;
   job: string;
-  kind: "history" | "unknown" | "finish" | "shade" | "zone" | "budget";
+  kind: "history" | "tried" | "unknown" | "finish" | "shade" | "zone" | "budget";
   label: string;
   reason: string;
+  all_reasons?: string[];
 }
 export interface TryOn {
   status: "ready" | "pending_live" | "no_shade";
@@ -256,6 +345,9 @@ export interface Basket {
   total_inr: number;
   next_step: string;
   tryon: TryOn;
+  start_plan: StartPlan;
+  tried: { chips: ChipOut[]; purge_questions: ChipOut[]; beginner: boolean; rule_version: string };
+  beginner: boolean;
   rule_version: string;
 }
 
@@ -817,6 +909,14 @@ export const api = {
     ),
   // ---- the basket (app/basket.py, app/needs.py, app/undertone.py)
   basketQuestions: () => call<BasketQuestions>("/api/basket/questions"),
+  chips: () => call<ChipsState>("/api/chips"),
+  /** Replaces the whole list; the engine validates each chip and infers nothing. */
+  setChips: (chips: ChipIn[]) => call<ChipsState>("/api/chips", json("PUT", { chips })),
+  matchChip: (text: string) =>
+    call<{ match: ChipSpec | null; line: string }>("/api/chips/match", json("POST", { text })),
+  /** A pasted ingredient list, checked like the shop's stock. Never stored. */
+  pasteCheck: (text: string, job: PasteJob, nickname?: string) =>
+    call<PasteResult>("/api/pastecheck", json("POST", { text, job, nickname: nickname || null })),
   /** The demo persona's prepared face. Never calls YouCam. */
   basket: (answers: Record<string, string>, persona = "riya") =>
     call<Basket>("/api/basket", json("POST", { answers, persona })),

@@ -106,7 +106,7 @@ class Scans:
 class Scene:
     persona: str
     shelf: list[str] | None        # None: leave the shared shelf alone
-    history: list[dict] | None     # None: leave the shared history alone
+    history: list[dict] | None     # None: leave the shared history alone; [] clears it (beginner)
     product_id: str | None = None
     goal: str = "redness"
     held_fixed: list[str] = field(default_factory=list)
@@ -195,6 +195,11 @@ def build(name: str, put: Callable[..., dict], all_: Callable[[str], list[dict]]
     now = now or datetime.now(timezone.utc)
     if sc.shelf is not None:
         put("shelf", {"product_ids": [p for p in sc.shelf if p in catalog]}, id="me")
+    if sc.history == []:
+        # The beginner starts from nothing: an earlier scene's records (riya's "avoid fragrance")
+        # must not leak into a "nothing tried yet" basket.
+        for h in all_("history"):
+            delete("history", h["id"])
     for h in sc.history or []:
         put("history", dict(h))
     # The trial's exclusion check uses this persona's own records, as POST /api/trials would.

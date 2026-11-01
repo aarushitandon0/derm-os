@@ -6,7 +6,8 @@ python-multipart>=0.0.9
 pytest>=8.0
 python-dotenv>=1.0
 # Server-side face crop (app/facecrop.py). The ~230 KB model downloads to app/models/ on first use.
-mediapipe>=0.10.20
+# Pinned to the version the live run and the memory check used (1.2.0, a py3-none wheel).
+mediapipe==1.2.0
 numpy>=1.26
 # HEIC/HEIF uploads (iPhone photos). Python 3.12 wheels for Linux and Windows; without it HEIC is refused.
 pillow-heif>=1.0

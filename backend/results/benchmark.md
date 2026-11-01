@@ -1,6 +1,6 @@
 # derm//os evidence benchmark
 
-**225 of 225 cases pass.**
+**235 of 235 cases pass.**
 
 Written and run by the derm//os team, so this is **not an independent evaluation**. Each case has an expected output written from the design doc before the engine was run. It shows the decision and evidence rules behave as designed; it says nothing about how accurate YouCam's skin scores are. No YouCam calls, no units spent. The LLM cases use a scripted stand-in provider (no network): they test the fallback and the claim validator, not any real model.
 
@@ -36,6 +36,7 @@ Run: `cd backend; python -m benchmark` (also runs under `python -m pytest`).
 | The verdict is written back, and never upgrades a can't-tell | 12 / 12 |
 | The demo personas produce the expected outcomes, from the real engines | 17 / 17 |
 | Basket: zone split, finish, history skips, unknown labels, owned, shade, wording | 15 / 15 |
+| History by ingredient, start plan, what to look for, paste check | 10 / 10 |
 
 ## All cases
 
@@ -403,4 +404,19 @@ Run: `cd backend; python -m benchmark` (also runs under `python -m pytest`).
 | bk-13 | Every basket has exactly one next step | pass |
 | bk-14 | No face measurement: the zones come from the answers, labelled, and every job answers | pass |
 | bk-15 | Riya's basket: owned cleanser, gel T-zone, cream cheeks, dewy tint in her shade | pass |
+
+### History by ingredient, start plan, what to look for, paste check
+
+| Case | Checks | Result |
+| --- | --- | --- |
+| ha-01 | Itched chip skips exact and same-group products | pass |
+| ha-02 | Broke-out chip skips only a key active | pass |
+| ha-03 | 'Suited me' never excludes anything | pass |
+| ha-04 | Purge: offered only after a yes, never applied without the user's choice | pass |
+| ha-05 | Product-level history ranks above a chip on the same product | pass |
+| ha-06 | Start plan: gentle, then sunscreen, then actives, 14 days apart, owned kept | pass |
+| ha-07 | What to look for: no exfoliant in the base, Avoid lists her own reasons | pass |
+| ha-08 | Paste check: suspect repeats a pattern, clean has no conflicts, cut-off is unknown | pass |
+| ha-09 | One need per zone: normal cheeks with low moisture read hydration once | pass |
+| ha-10 | Beginner: gentle label on every card, no history step | pass |
 

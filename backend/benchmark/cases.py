@@ -15,6 +15,7 @@ import os
 import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import date
 from typing import Any, Callable
 
 from app import cartcheck as CC
@@ -1257,7 +1258,7 @@ def _tone(hex_: str = "#b9947c") -> dict:
     return {"data": {"results": {"color": {"skin_color": hex_}}}}
 
 
-def basket_of(skin=None, tone=None, answers=None, shelf=None, history=True) -> dict:
+def basket_of(skin=None, tone=None, answers=None, shelf=None, history=True, chips=None, today=None) -> dict:
     face = DEMO_FACES["riya"]
     skin = face["skin"] if skin is None else skin
     tone = face["tone"] if tone is None else tone
@@ -1267,7 +1268,8 @@ def basket_of(skin=None, tone=None, answers=None, shelf=None, history=True) -> d
     return BK.build(zones=zones, measured=measured, ut=UT.from_payload(tone, answers), answers=answers,
                     stock=_STOCK, catalog=IDX, records=RIYA_RECS if history else [],
                     outcomes=RIYA_OUT if history else [],
-                    shelf=RIYA_SHELF if shelf is None else shelf).to_dict()
+                    shelf=RIYA_SHELF if shelf is None else shelf, chips=chips,
+                    today=today or date(2026, 11, 2)).to_dict()
 
 
 def _pick(b: dict, title: str) -> str | None:
@@ -1343,4 +1345,77 @@ CASES += [
          ("cl-01", "mo-11", "mo-14", "tt-02"),
          lambda: tuple(_pick(basket_of(), t) for t in ("Cleanser", "T-zone moisturiser", "Cheek moisturiser",
                                                       "Sunscreen / skin tint"))),
+]
+
+
+# ---------------------------------------------------------------- history-aware, safe to start
+# Ingredient chips, the start plan, "what to look for", the paste check, one need per zone.
+from app import chips as CHP  # noqa: E402
+from app import pastecheck as PCK  # noqa: E402
+from app import startplan as SPL  # noqa: E402
+from app.scenes import RIYA_CHIPS  # noqa: E402
+
+HISTORY_AWARE = "History by ingredient, start plan, what to look for, paste check"
+CATEGORIES.append(HISTORY_AWARE)
+
+
+def _chip_skip(inci: list[str], *rows: dict) -> list[str]:
+    return [s["match_type"] for s in CHP.evaluate(inci, CHP.parse_all(list(rows)))["skip"]]
+
+
+def _paste(text: str) -> tuple:
+    r = PCK.check(text=text, job="moisturiser", nickname=None, finish=None, records=RIYA_RECS,
+                  outcomes=RIYA_OUT, chips=RIYA_CHIPS, catalog=IDX, zones=None, measured=None, goal_finish=None)
+    return r["rung"], r["unknown"]
+
+
+_CALM = ["Water", "Glycerin", "Squalane", "Panthenol", "Allantoin", "Sodium Hyaluronate"]
+
+CASES += [
+    Case("ha-01", HISTORY_AWARE, "Itched chip skips exact and same-group products", (["exact"], ["family"]),
+         lambda: (_chip_skip(_CALM + ["Ascorbic Acid"], {"chip": "vitamin_c", "reaction": "itched"}),
+                  _chip_skip(IDX["mo-17"].inci, {"chip": "vitamin_c", "reaction": "itched"}))),
+    Case("ha-02", HISTORY_AWARE, "Broke-out chip skips only a key active", (["exact"], []),
+         lambda: (_chip_skip(IDX["mo-18"].inci, {"chip": "azelaic_acid", "reaction": "broke_out"}),
+                  _chip_skip(_CALM + ["Azelaic Acid"], {"chip": "azelaic_acid", "reaction": "broke_out"}))),
+    Case("ha-03", HISTORY_AWARE, "'Suited me' never excludes anything", [],
+         lambda: _chip_skip(_CALM + ["Snail Secretion Filtrate"], {"chip": "snail_mucin", "reaction": "suited"})),
+    Case("ha-04", HISTORY_AWARE, "Purge: offered only after a yes, never applied without the user's choice",
+         (None, CHP.PURGE_OFFER, None, ["exact"]),
+         lambda: (lambda no, yes: (no.purge_offer(), yes.purge_offer(), yes.purge_choice,
+                                   _chip_skip(IDX["mo-18"].inci, yes.to_dict())))(
+             CHP.Chip("azelaic_acid", "broke_out"), CHP.Chip("azelaic_acid", "broke_out", usual_spots_settled="yes"))),
+    Case("ha-05", HISTORY_AWARE, "Product-level history ranks above a chip on the same product", "history",
+         lambda: next(s["kind"] for s in basket_of(chips=[{"chip": "fragrance", "reaction": "itched"}])["skipped"]
+                      if s["product_id"] == "mo-13")),
+    Case("ha-06", HISTORY_AWARE, "Start plan: gentle, then sunscreen, then actives, 14 days apart, owned kept",
+         (["mo-14", "tt-02", "sr-01"], [14, 14], ["cl-01"]),
+         lambda: (lambda p: ([s["product_id"] for s in p["steps"]],
+                             [(date.fromisoformat(b["start_on"]) - date.fromisoformat(a["start_on"])).days
+                              for a, b in zip(p["steps"], p["steps"][1:])],
+                             [k["product_id"] for k in p["keep"]]))(
+             SPL.plan([{"title": t, "job": j, "status": st, "pick": {"product": {"id": pid}}} for t, j, pid, st in
+                       (("Serum", "serum", "sr-01", "pick"), ("Tint", "base", "tt-02", "pick"),
+                        ("Cleanser", "cleanser", "cl-01", "owned"), ("Cheeks", "moisturiser", "mo-14", "pick"))],
+                      IDX, date(2026, 11, 2)))),
+    Case("ha-07", HISTORY_AWARE, "What to look for: no exfoliant in the base, Avoid lists her own reasons",
+         (False, True),
+         lambda: (lambda b: (
+             any("BHA" in i or "AHA" in i for i in next(j for j in b["jobs"] if j["job"] == "base")["look_for"]["ingredients"]),
+             {"what": "vitamin C", "why": "itched, stung or burned on you before"}
+             in next(j for j in b["jobs"] if j["job"] == "moisturiser")["look_for"]["avoid"]))(basket_of(chips=RIYA_CHIPS))),
+    Case("ha-08", HISTORY_AWARE, "Paste check: suspect repeats a pattern, clean has no conflicts, cut-off is unknown",
+         (("repeats_a_pattern", False), ("no_conflicts", False), True),
+         lambda: (_paste("Water, Glycerin, Alcohol Denat., Niacinamide, Zinc PCA, Dimethicone."),
+                  _paste("Water, Glycerin, Squalane, Panthenol, Allantoin, Sodium Hyaluronate."),
+                  _paste("Water, Glycerin, Squalane...")[1])),
+    Case("ha-09", HISTORY_AWARE, "One need per zone: normal cheeks with low moisture read hydration once",
+         [("hydration", "u_zone")],
+         lambda: [(n.key, n.zone) for n in ND.build_needs(
+             {"t_zone": ND.ZoneRead("t_zone", "oily", False, "face"),
+              "u_zone": ND.ZoneRead("u_zone", "normal", False, "face")}, {"moisture": 40.0}) if n.zone == "u_zone"]),
+    Case("ha-10", HISTORY_AWARE, "Beginner: gentle label on every card, no history step",
+         (True, True, []),
+         lambda: (lambda b: (b["beginner"], all(j.get("label") == BK.GENTLE_LABEL for j in b["jobs"]), b["tried"]["chips"]))(
+             basket_of(answers={"history": "new"}, chips=RIYA_CHIPS, shelf=[]))),
 ]

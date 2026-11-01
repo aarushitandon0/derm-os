@@ -3630,3 +3630,226 @@ button,
   font-weight: 600;
   font-size: 14px;
 }
+
+/* ------------------------------------------------------------------ basket: history chips, start plan, look-for, paste check */
+.symchip--sm {
+  min-height: 44px; /* tap target */
+  padding: 0 12px;
+  font-size: 13.5px;
+}
+.chipq {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.chipq__tile {
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
+}
+.chipq__tile.is-open {
+  box-shadow: inset 0 0 0 2px var(--ink);
+}
+.chipq__react {
+  font-size: 12.5px;
+  opacity: 0.85;
+}
+.chipq__panel {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: var(--r);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  min-width: 0;
+}
+.chipq__ask,
+.purgeq__q {
+  margin: 0;
+  font-weight: 600;
+  font-size: 14.5px;
+}
+.chipq__line {
+  margin: 0;
+}
+.chipq__check {
+  font-size: 14px;
+}
+.chipq__free {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+.purgeq {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: var(--r-sm);
+  background: var(--card);
+}
+.purgeq__offer {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.bcard__label {
+  margin: 0;
+  justify-self: start;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--sage-soft);
+  font-size: 12.5px;
+  font-weight: 550;
+}
+.skip__more {
+  display: block;
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+.lookfor {
+  padding: 12px;
+  border-radius: var(--r-sm);
+  background: var(--card);
+  min-width: 0;
+}
+.lookfor__title {
+  margin: 0 0 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.lookfor__lines {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.lookfor__avoid {
+  color: var(--stop);
+}
+.plan {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.plan .prose {
+  margin: 0;
+}
+.plan__steps {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.plan__step {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border-radius: var(--r);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  min-width: 0;
+}
+.plan__step .btn {
+  justify-self: start;
+}
+.plan__group {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.plan__line {
+  font-size: 14.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.plan__stop {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-radius: var(--r);
+  background: var(--stop-bg);
+}
+.plan__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.plan__src a {
+  color: inherit;
+}
+.paste {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.paste .field {
+  margin: 0;
+}
+.paste__text {
+  width: 100%;
+  min-height: 110px;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--raised);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  font: inherit;
+  font-size: 14.5px;
+  resize: vertical;
+  box-sizing: border-box;
+}
+.paste__nick input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--raised);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  box-sizing: border-box;
+}
+.chipq .field input {
+  box-sizing: border-box;
+}
+.pasteres {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border-radius: var(--r-lg);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.pasteres--blocked,
+.pasteres--repeats_a_pattern,
+.pasteres--tried_before {
+  background: var(--stop-bg);
+}
+.pasteres__name,
+.pasteres__label {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.pasteres__verdict {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 24px;
+  line-height: 1.15;
+}

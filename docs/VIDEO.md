@@ -1,30 +1,33 @@
-# derm//os: 3-minute video shot list
+# derm//os: video shot list (2:50 max)
 
-Record on a phone (screen recording) plus a few seconds of a laptop for the code. Each shot is
-marked **LIVE** (a real YouCam scan on the phone, with the passcode, spending units) or
-**PREPARED** (demo mode; the screen says "Prepared demo data"). Say "prepared data" aloud whenever
-a prepared screen is on.
+Screen-record on a phone, on the **live deployed app** (the Vercel URL), not localhost. Speak over it; no music.
 
-Rules for the cut:
+## Before you record
 
-- No real brands, products, shops or logos anywhere in frame (all products in the app are fictional). Check the background of the live shot.
-- No music you don't own. Use silence, your voice, or a track you made or one licensed for reuse; keep its licence link in the Devpost text.
-- Don't name or show any other hackathon entry.
-- Fill in every `[placeholder]` from `backend/results/report.md` before recording. Say numbers exactly as measured, with n.
+- **Only fictional brands in frame.** Everything in the app is fictional. Check the background of the selfie and hide real product bottles, shop names and logos. No other hackathon entry either.
+- **The try-on needs one live run.** In demo mode the try-on card says "Preview appears on a live scan". To show your own face in matte and dewy:
+  - set `DEMO_MODE=0` on Render and enter the passcode on the phone;
+  - one live basket costs 34 units (Skin Tone 20 + Skin Analysis 12 + 2 try-on renders);
+  - run it only with an approved unit budget, then set `DEMO_MODE` back to `1`.
+- **Prepared screens are labelled.** Every other beat can use **Use Riya's demo face** (demo data, 0 units). Say "demo data" aloud whenever its tag is on screen.
+- **Free wake-up.** The free Render server sleeps. Open the app once a minute before you record.
 
-| Time | Shot | Source | Voice-over (read as written) |
-| --- | --- | --- | --- |
-| 0:00–0:20 | Black screen, then the headline sentence typed on screen; cut to the two lamp-vs-window photos' scores side by side (numbers only, no face) | Results of the shoot | "We scanned the same face [n] times with nothing changed. A fixed five-point rule called a change in [X]% of comparisons. derm//os called one in [Y]% of [M] baseline-and-check-in splits, and its rule was fixed before we looked. Under a warm lamp, it marked [Z]% of photo pairs not comparable." |
-| 0:20–0:35 | Landing page: "Same face, same light, one change, honest verdict." | PREPARED | "derm//os is for one question: before you rebuy a skincare product, did your skin change more than it does on its own?" |
-| 0:35–0:55 | Live baseline on the phone: the face guide turns green, the auto-shutter takes 3 photos, "Analysing" steps | **LIVE** | "This is a live scan with YouCam AI Skin Analysis version 2.1. The server crops the photo around the face so the face is the same size every time, uploads it with `POST /s2s/v2.0/file` and a presigned PUT, creates the task with `POST /s2s/v2.1/task/skin-analysis`, and polls `GET /s2s/v2.1/task/skin-analysis/{task_id}`. Three scans give a range, not a single number." |
-| 0:55–1:05 | Capture-quality screen after the live scan | **LIVE** | "It saves the marked-area masks straight away because the links expire, then deletes the task and the photo at YouCam with `POST /s2s/v2.0/task/delete`. Before every live scan it reads the balance with `GET /s2s/v1.0/client/credit` and the exact price from `GET /s2s/v2.0/credit/feature-cost`." |
-| 1:05–1:15 | Tap "Try the 90-second demo" → step list | PREPARED | "From here it's prepared data, so judges can try it without units. Every verdict is still worked out by the same engine." |
-| 1:15–1:30 | Step 1, History: reaction to the fragranced moisturiser; "avoid fragrance" as a separate record | PREPARED | "Riya once reacted to a fragranced moisturiser. That's a reaction to one product. Avoiding fragrance is her own choice, and the app keeps the two apart." |
-| 1:30–1:50 | Step 2, Compare: Option A blocked with the label line; Option B "Unknown, not a pass"; tap Replaces | PREPARED | "Two sale options. One is blocked, and you can see the exact line on the label. The other's ingredient list is incomplete, so it says unknown, never a pass. And changing nothing is always a column." |
-| 1:50–2:05 | Steps 3–4: trial card, then the warm-lamp check-in, "Not comparable" and the retake fix | PREPARED | "She tries one product and holds everything else fixed. Then she checks in under a warm lamp. The gate says these photos can't be compared, and tells her how to retake." |
-| 2:05–2:20 | Step 5: day 14, "No detectable change yet", rebuy line | PREPARED | "Back in window light at day 14: her new scores sit inside her own range. Rebuy? Finish the trial first." |
-| 2:20–2:35 | Steps 6–7: itching logged → Stop card → visit brief | PREPARED | "Then she logs itching. A reaction you can feel outranks any score: don't rebuy, and here's a one-page brief for a clinician." |
-| 2:35–2:45 | Step 8: Meera, "Redness dropped beyond your usual variation during this trial", rebuy line | PREPARED | "Meera's check-ins match her baseline and leave her range. That's the strongest thing derm//os will say: it changed during this trial, not why." |
-| 2:45–3:00 | Laptop: `docs/architecture.svg`, then CI green, benchmark "115 / 115", claim linter "0 findings" | Repo | "Rules decide; YouCam measures. A benchmark we wrote ourselves passes 115 of 115, a claim linter blocks overclaiming words in every screen, and every claim in the README links to the test behind it. Decision support, not diagnosis." |
+## Shots
 
-Before you publish: watch it once with the sound off and check every prepared screen shows "Prepared demo data".
+| Time | Shot (phone screen) | Voice-over |
+| --- | --- | --- |
+| 0:00–0:15 | Your face, then Home: **Build my basket from my face** | "Vitamin C made me itch. Azelaic acid broke me out. There's a sale on, everyone's buying the trending serum, and opened skincare can't be returned. So I built derm//os: shop by your face, not by the hype." |
+| 0:15–0:40 | Selfie with the live face guide → the face map: zones in colour, "T-zone: oily", "Cheeks: …", needs, undertone | "One selfie. YouCam Skin Analysis reads my skin type zone by zone, so my oily T-zone and my cheeks get different products. YouCam Skin Tone gives my skin colour, and derm//os works out my undertone from it with a written rule. No scores, just words." |
+| 0:40–0:55 | The questions: finish (dewy), then the history chips: tap **Vitamin C → itched**, **Azelaic acid → broke me out** | "I pick the finish I want and tap what's bothered me before. Most people remember the ingredient, not the label." |
+| 0:55–1:30 | The basket: scroll the cards (T-zone gel, cheek cream, tint in my shade, with Why · How to use), then **Skipped**: Dewdrop Skin Tint "Contains Alcohol Denat., in 2 of 2 products that made you itch…", Bright Dew C Gel (vitamin C family), Dew Veil "Ingredient list incomplete → unknown"; then "You already own" the cleanser | "One card per job, each with three reasons: from my face, from my history, and my finish. And here's what it skipped, with the exact reason: this tint has Alcohol Denat., which was in both products that made me itch. This gel has a vitamin C cousin. This one's ingredient list is incomplete, so it's unknown, never a pass. And I already own a cleanser, so it tells me not to buy another." |
+| 1:30–1:45 | Start plan: patch test, then the three dates two weeks apart; tap one calendar reminder | "Then a start plan: patch-test first, one new product every two weeks, gentlest first, with reminders." |
+| 1:45–2:05 | **See the finish on you**: matte vs dewy on your face, in your shade | "And before I pay: YouCam Makeup Try-On puts the tint on my own photo, matte versus dewy, in my shade." |
+| 2:05–2:20 | Paste a label: paste an ingredient list from another shop → the result with its labelled sources | "Found something in another shop? Paste its ingredient list. It's checked against my history the same way." |
+| 2:20–2:30 | Home → **My skin just broke out** → What changed? → the result | "And if I break out anyway, the breakout helper looks at what changed two to eight weeks ago and says which one product to pause." |
+| 2:30–2:50 | Back to the basket, then the end card: app URL, repo, "Skin Analysis · Skin Tone · Makeup Try-On" | "A chatbot guesses. derm//os measures your face, checks real ingredient lists against your history, and shows you the finish on you. Built on three YouCam APIs: Skin Analysis, Skin Tone and Makeup Virtual Try-On. Decision support, not a diagnosis." |
+
+## Before you publish
+
+- Watch it once with the sound off: no real brand in frame, and the demo-data tag is visible on every prepared screen.
+- Check it runs 2:50 or less.
+- Put the link in the README's "Judge quick access" table and in docs/DEVPOST.md.

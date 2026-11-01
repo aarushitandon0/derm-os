@@ -35,6 +35,10 @@ services:
         value: "100"
       - key: LLM_PROVIDER
         value: none
+      # Skin Tone face-angle check: the most lenient documented level, so a slightly turned
+      # selfie is still read (app/youcam.py tone_strictness). One of flexible|low|medium|high|strict.
+      - key: YOUCAM_FACE_ANGLE_STRICTNESS
+        value: flexible
       # Set in the dashboard: your Vercel URL, e.g. https://<project>.vercel.app
       - key: CORS_ORIGINS
         sync: false

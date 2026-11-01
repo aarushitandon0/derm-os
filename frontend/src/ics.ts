@@ -66,6 +66,26 @@ export function buildIcs(trialId: string, productName: string, concern: string, 
   return lines.map(fold).join("\r\n") + "\r\n";
 }
 
+/** One all-day event (a start-plan step). Same escaping and folding as the check-in file. */
+export function buildDayIcs(uid: string, isoDate: string, summary: string, description: string): string {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  const end = localISODate(new Date(y, m - 1, d + 1));
+  const lines = [
+    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//derm os//Start plan//EN", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
+    "BEGIN:VEVENT",
+    `UID:${uid}@dermos`,
+    `DTSTAMP:${stamp()}`,
+    `DTSTART;VALUE=DATE:${compact(isoDate)}`,
+    `DTEND;VALUE=DATE:${compact(end)}`,
+    `SUMMARY:${esc(summary)}`,
+    `DESCRIPTION:${esc(description)}`,
+    "BEGIN:VALARM", "ACTION:DISPLAY", `DESCRIPTION:${esc(summary)}`, "TRIGGER:PT9H", "END:VALARM",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ];
+  return lines.map(fold).join("\r\n") + "\r\n";
+}
+
 export function downloadIcs(filename: string, text: string): void {
   const url = URL.createObjectURL(new Blob([text], { type: "text/calendar;charset=utf-8" }));
   const a = document.createElement("a");

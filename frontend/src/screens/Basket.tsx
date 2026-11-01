@@ -5,7 +5,7 @@ import { DEMO_DATA_TAG, inr, NOT_DIAGNOSIS } from "../copy";
 import { FaceMap } from "../components/FaceMap";
 import { ProductArt } from "../components/ProductArt";
 import { Btn, IncompleteTag, Loading, NavBar, Notice, PageHead, RowLink, Section } from "../components/ui";
-import { buildIcs, downloadIcs, upcomingCheckins } from "../ics";
+import { ChipsPicker, LookFor, PasteCheck, StartPlanCard } from "../components/BasketExtras";
 import { KEYS, writeLocal } from "../local";
 import { href } from "../router";
 import { useStore } from "../store";
@@ -25,6 +25,7 @@ export default function Basket() {
   const [answers, setAnswers] = useState<Record<string, string>>({ finish: "dewy", history: "use", budget: "any" });
   const [photo, setPhoto] = useState<File | null>(null);
   const [demoFace, setDemoFace] = useState(false);
+  const [persona, setPersona] = useState<"riya" | "beginner">("riya");
   const [basket, setBasket] = useState<BasketData | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -41,16 +42,23 @@ export default function Basket() {
     );
   }, [step]);
 
-  const useDemoFace = async () => {
+  const useDemoFace = async (who: "riya" | "beginner") => {
     setBusy(true);
     setErr(null);
     try {
       writeLocal(KEYS.onboarded, true);
-      // Riya's saved history and shelf, written the way the app's own endpoints would.
+      // Riya: her saved history, chips and shelf. Beginner: the scene clears the demo history first,
+      // so nothing from an earlier take leaks into a "nothing tried yet" basket.
       if (health?.server_demo_mode !== false) {
-        await api.demoScene("riya-basket");
+        await api.demoScene(who === "riya" ? "riya-basket" : "beginner");
         await refresh();
       }
+      setPersona(who);
+      setAnswers((a) => ({
+        ...a,
+        history: who === "beginner" ? "new" : "use",
+        finish: who === "beginner" ? "natural" : "dewy",
+      }));
       setDemoFace(true);
       setPhoto(null);
       setStep("questions");
@@ -65,7 +73,8 @@ export default function Basket() {
     setBusy(true);
     setErr(null);
     try {
-      const b = demoFace || !photo ? await api.basket(answers) : await api.basketScan(photo, answers);
+      const b =
+        demoFace || !photo ? await api.basket(answers, persona) : await api.basketScan(photo, answers, persona);
       setBasket(b);
       setStep("result");
       window.scrollTo(0, 0);
@@ -83,7 +92,13 @@ export default function Basket() {
         <PageHead eyebrow={BASKET.usp} title={BASKET.hero} lede={BASKET.heroSub} />
         <Section label={BASKET.startTitle}>
           <div className="choices">
-            <RowLink icon="search" title={BASKET.demoFace} sub={BASKET.demoFaceSub} onClick={useDemoFace} />
+            <RowLink icon="search" title={BASKET.demoFace} sub={BASKET.demoFaceSub} onClick={() => useDemoFace("riya")} />
+            <RowLink
+              icon="search"
+              title={BASKET.beginnerFace}
+              sub={BASKET.beginnerFaceSub}
+              onClick={() => useDemoFace("beginner")}
+            />
             {!demo && (
               <label className="pickphoto">
                 <span className="pickphoto__title">{BASKET.selfie}</span>
@@ -103,7 +118,7 @@ export default function Basket() {
           </div>
           {demo && <p className="small muted">{BASKET.demoNote}</p>}
         </Section>
-        {busy && <Loading label="Loading Riya's saved history" />}
+        {busy && <Loading label="Loading the demo history" />}
         {err && <Notice tone="stop">{err}</Notice>}
         <p className="foot small">{NOT_DIAGNOSIS} All products shown are fictional.</p>
       </div>
@@ -113,7 +128,11 @@ export default function Basket() {
     return (
       <div className="page">
         <NavBar back="/basket" />
-        {demoFace && <p className="tag tag--prepared">{DEMO_DATA_TAG} · Riya</p>}
+        {demoFace && (
+          <p className="tag tag--prepared">
+            {DEMO_DATA_TAG} · {persona === "riya" ? "Riya" : "Beginner"}
+          </p>
+        )}
         <PageHead title={BASKET.questionsTitle} />
         {!questions ? (
           <Loading />
@@ -131,6 +150,13 @@ export default function Basket() {
                   <a href={href("/history")}>Add or review</a>
                 </p>
               )}
+              {q.id === "history" && answers.history === "use" && (
+                <>
+                  <p className="small">{BASKET.chipsHelp}</p>
+                  <ChipsPicker />
+                </>
+              )}
+              {q.id === "history" && answers.history === "new" && <p className="small">{BASKET.beginnerHelp}</p>}
               <div className="choices" role="radiogroup" aria-label={q.text}>
                 {q.choices.map((c) => (
                   <RowLink
@@ -159,15 +185,6 @@ export default function Basket() {
   if (!basket) return <Loading />;
 
   if (step === "tryon") return <TryOnView basket={basket} onBack={() => setStep("result")} />;
-
-  const remind = () => {
-    const names = basket.jobs.filter((j) => j.status === "pick" && j.pick).map((j) => j.pick!.product.name);
-    downloadIcs(
-      "dermos-basket-day-14.ics",
-      buildIcs(basket.id, names.join(", ") || "your basket", "how each new product sits with your skin",
-        upcomingCheckins(new Date().toISOString(), [14]))
-    );
-  };
 
   const fm = basket.face_map;
   return (
@@ -205,6 +222,9 @@ export default function Basket() {
                 </span>
                 <span className="skip__kind">{s.label}</span>
                 <span className="skip__reason">{s.reason}</span>
+                {s.all_reasons && s.all_reasons.length > 1 && (
+                  <span className="skip__more">Also: {s.all_reasons.slice(1).join(" ")}</span>
+                )}
               </li>
             ))}
           </ul>
@@ -223,10 +243,16 @@ export default function Basket() {
 
       <Section label={BASKET.nextLabel}>
         <p className="prose nextstep">{basket.next_step}</p>
+      </Section>
+
+      <Section label={basket.start_plan.title}>
+        <StartPlanCard plan={basket.start_plan} demo={basket.source === "replay"} />
+      </Section>
+
+      <Section label={BASKET.pasteLabel}>
+        <p className="formhelp">{BASKET.pasteHelp}</p>
+        <PasteCheck />
         <div className="actions">
-          <Btn onClick={remind} wide>
-            {BASKET.remind}
-          </Btn>
           <Btn to="/store" kind="quiet" wide>
             {BASKET.storeLink}
           </Btn>
@@ -246,6 +272,7 @@ function JobCard({ job }: { job: BasketJob }) {
   return (
     <li className={`bcard bcard--${job.status}`}>
       <p className="bcard__job">{job.title}</p>
+      {job.label && <p className="bcard__label">{job.label}</p>}
       {p ? (
         <div className="bcard__head">
           <span className="bcard__art">
@@ -282,6 +309,14 @@ function JobCard({ job }: { job: BasketJob }) {
         </p>
       )}
       {job.note && p && <p className="small muted">{job.note}</p>}
+      {job.tried && job.tried.length > 0 && (
+        <ul className="srclines">
+          {job.tried.map((t) => (
+            <li key={t}>{t}</li>
+          ))}
+        </ul>
+      )}
+      {job.look_for && <LookFor data={job.look_for} />}
       {job.also_fits.length > 0 && (
         <p className="small muted">
           {BASKET.alsoFits}:{" "}

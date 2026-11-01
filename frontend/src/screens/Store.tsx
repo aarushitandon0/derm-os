@@ -3,6 +3,7 @@ import { api, type SaleItem, type Store as StoreData } from "../api";
 import { CHECK_AGAINST, DEMO_DATA_TAG, inr, NOT_DIAGNOSIS, STORE_HELP } from "../copy";
 import { ProductArt } from "../components/ProductArt";
 import { CartCheckPanel } from "../components/CartCheck";
+import { PasteCheck } from "../components/BasketExtras";
 import { Btn, IncompleteTag, Loading, NavBar, Notice, PageHead, Section } from "../components/ui";
 import { go } from "../router";
 
@@ -60,6 +61,11 @@ export default function Store({ checkId }: { checkId?: string | null }) {
             <SaleRow key={i.product_id} item={i} />
           ))}
         </ul>
+      </Section>
+
+      <Section label="Check any product">
+        <p className="formhelp">Not in this sale? Paste any product's ingredient list and it is checked the same way.</p>
+        <PasteCheck />
       </Section>
 
       <p className="foot small">

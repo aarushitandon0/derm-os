@@ -137,6 +137,13 @@ ALLOW: list[Allow] = [
     Allow("backend/app/llm/intake.py", "The text doesn't say a clinician confirmed this allergy",
           "The hint shown when the app REFUSES to file something as an allergy, which is the rule "
           "being enforced rather than broken."),
+
+    # ---- "worked for you": the user's own "suited me" chip, echoed back. Not a product claim.
+    # One entry covers both places in chips.py (the chip read-back and the basket card line).
+    Allow("backend/app/chips.py", "worked for you.",
+          "the user's own 'suited me' report read back to them"),
+    Allow("backend/app/lookfor.py", "Worked for you before:",
+          "the user's own 'suited me' report read back to them"),
 ]
 
 # Real cosmetic brands and retailers that must never appear (all products are fictional).

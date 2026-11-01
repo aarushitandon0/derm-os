@@ -189,8 +189,9 @@ def _consider(p: D.Product, tags: dict, job: Job, *, chk: CC.CartCheck | None, f
         for s in c.tried["skip"]:
             c.reasons.append(("tried", s["line"]))
     if not p.inci_complete:
-        c.reasons.append(("unknown", f"{CC.UNKNOWN_LABEL}: anything not printed on the label can't be "
-                                     f"checked against your history, so it isn't picked."))
+        # The card already prints SKIP_LABEL["unknown"] above this line, so the reason doesn't repeat it.
+        c.reasons.append(("unknown", "Anything not printed on the label can't be checked against your "
+                                     "history, so it isn't picked."))
     fin = tags.get("finish")
     if fin in fspec["clash"]:
         c.reasons.append(("finish", f"{fin.capitalize()} finish; you asked for {fspec['words']}."))
@@ -211,12 +212,18 @@ def _consider(p: D.Product, tags: dict, job: Job, *, chk: CC.CartCheck | None, f
     return c
 
 
-def gentle_rank(p: D.Product) -> tuple[int, int]:
-    """(lists fragrance or essential oils, number of actives on the label): lower is gentler."""
+def harsh_for_beginner(p: D.Product) -> bool:
+    """Lists fragrance, essential oils or a drying alcohol (Alcohol Denat.)."""
     keys = set(p.canonical_inci)
-    frag = bool(keys & (set(P.FAM.members_of("fragrance")) | {"essential oils"}))
+    return bool(keys & (set(P.FAM.members_of("fragrance")) | {"essential oils"}
+                        | set(P.FAM.members_of("drying alcohols"))))
+
+
+def gentle_rank(p: D.Product) -> tuple[int, int]:
+    """(lists fragrance, essential oils or Alcohol Denat., number of actives on the label): lower is gentler."""
+    keys = set(p.canonical_inci)
     actives = sum(1 for cid in GENTLE_ACTIVE_CHIPS if keys & set(CH.spec_of(cid)["members"]))
-    return (1 if frag else 0, actives)
+    return (1 if harsh_for_beginner(p) else 0, actives)
 
 
 def _rank_key(c: Considered, fspec: dict, textures: list[str], beginner: bool = False):
@@ -435,7 +442,9 @@ def build(*, zones: dict[str, N.ZoneRead], measured: dict[str, float] | None, ut
         card["also_fits"] = [{"product_id": c.product.id, "name": c.product.name, "brand": c.product.brand,
                               "price_inr": c.product.price_inr,
                               "patch_test_first": bool(c.check and c.check.rung == CC.Rung.PATCH_TEST_FIRST.value)}
-                             for c in eligible[1:3]]
+                             for c in eligible[1:]
+                             # A beginner's alternatives keep the same gentle bias as the pick.
+                             if not (beginner and harsh_for_beginner(c.product))][:2]
         jobs_out.append(card)
 
     # A product picked or still fitting somewhere is not "skipped", whatever another job said.

@@ -1,6 +1,6 @@
 # derm//os evidence benchmark
 
-**115 of 115 cases pass.**
+**225 of 225 cases pass.**
 
 Written and run by the derm//os team, so this is **not an independent evaluation**. Each case has an expected output written from the design doc before the engine was run. It shows the decision and evidence rules behave as designed; it says nothing about how accurate YouCam's skin scores are. No YouCam calls, no units spent. The LLM cases use a scripted stand-in provider (no network): they test the fallback and the claim validator, not any real model.
 
@@ -16,7 +16,7 @@ Run: `cd backend; python -m benchmark` (also runs under `python -m pytest`).
 | Add switched to replace recalculates | 8 / 8 |
 | Several changes: can't tell | 4 / 4 |
 | Overlap: no detectable change | 5 / 5 |
-| Different conditions: not comparable, re-guide | 12 / 12 |
+| Different conditions: not comparable, re-guide | 14 / 14 |
 | Symptoms outrank improved scores | 6 / 6 |
 | Unresolved stop symptom persists | 4 / 4 |
 | Missing baseline: no trend claim | 4 / 4 |
@@ -27,6 +27,15 @@ Run: `cd backend; python -m benchmark` (also runs under `python -m pytest`).
 | LLM down or draft rejected: templates shown, core flow unaffected | 7 / 7 |
 | LLM draft overclaims ("caused by" etc.): validator rejects it | 6 / 6 |
 | LLM intake proposes; the user confirms | 5 / 5 |
+| Irritation and breakout never share a suspect list | 5 / 5 |
+| Contrast decides: suited products clear, one failed product can't narrow | 10 / 10 |
+| Synonyms and families match, exact first | 7 / 7 |
+| Cart check: the verdict ladder, in order | 10 / 10 |
+| Cart check: three labelled sources, change nothing, one next step | 14 / 14 |
+| Breakout triage: the window, purging, usual spots, one next step | 18 / 18 |
+| The verdict is written back, and never upgrades a can't-tell | 12 / 12 |
+| The demo personas produce the expected outcomes, from the real engines | 17 / 17 |
+| Basket: zone split, finish, history skips, unknown labels, owned, shade, wording | 15 / 15 |
 
 ## All cases
 
@@ -131,6 +140,8 @@ Run: `cd backend; python -m benchmark` (also runs under `python -m pytest`).
 | nc-12 | Photo-file label vs live-camera label: device 'not compared', pair still comparable | pass |
 | nc-09 | Not comparable outranks big score gains | pass |
 | nc-10 | Small light change within tolerance stays comparable | pass |
+| nc-13 | Camera metered 4 stops of difference: not comparable, even though the photos look equally bright | pass |
+| nc-14 | No exposure recorded on either side: not a failure, and not counted as a matching field either | pass |
 
 ### Symptoms outrank improved scores
 
@@ -239,4 +250,157 @@ Run: `cd backend; python -m benchmark` (also runs under `python -m pytest`).
 | llm-16 | LLM attaches an ingredient to a product reaction: dropped, stays product-level | pass |
 | llm-17 | Allergy with no clinician in the text: proposed as 'avoid', type needs confirmation | pass |
 | llm-18 | API intake proposes but saves nothing | pass |
+
+### Irritation and breakout never share a suspect list
+
+| Case | Checks | Result |
+| --- | --- | --- |
+| sep-01 | Her irritation suspect (a drying alcohol) is not in the breakout run | pass |
+| sep-02 | The irritation run's failure set is only the products that itched | pass |
+| sep-03 | The breakout run's failure set is only the product that broke her out | pass |
+| sep-04 | Azelaic acid is a breakout candidate and never an irritation one | pass |
+| sep-05 | A cleanser that stings is NOT down-weighted (only breakouts are) | pass |
+
+### Contrast decides: suited products clear, one failed product can't narrow
+
+| Case | Checks | Result |
+| --- | --- | --- |
+| con-01 | In 2 of 2 products that itched and 0 that suited: a suspect | pass |
+| con-02 | The counts read 'in 2 of 2 ... 0 of 2 that suited you' | pass |
+| con-03 | An ingredient that is also in a suited product is cleared, never a suspect | pass |
+| con-04 | In 1 failed product of 2 and 0 suited: a lead, not a suspect | pass |
+| con-05 | A 2-week 'suited' product clears nothing: the shared alcohol is still a suspect | pass |
+| con-06 | The same product at 4 weeks does clear it | pass |
+| con-07 | A 2-week 'suited' outcome reads as too early to say | pass |
+| con-08 | One failed product: says plainly it can't narrow down which ingredient | pass |
+| con-09 | One failed product names no suspects and no leads at all | pass |
+| con-10 | One failed product lists only what is in nothing that suited her | pass |
+
+### Synonyms and families match, exact first
+
+| Case | Checks | Result |
+| --- | --- | --- |
+| mat-01 | 'Parfum (Fragrance)' and 'Fragrance' count as one ingredient: a suspect | pass |
+| mat-02 | ...and the synonym match names both products | pass |
+| mat-03 | The fragrance FAMILY is matched across differently-named components | pass |
+| mat-04 | An exact match ranks above a family match of the same tier | pass |
+| mat-05 | A cross-reactor with no exact history is a family match, so patch-test | pass |
+| mat-06 | A fatty alcohol is not in the drying-alcohol family | pass |
+| mat-07 | Every ingredient family and the purge list are versioned data | pass |
+
+### Cart check: the verdict ladder, in order
+
+| Case | Checks | Result |
+| --- | --- | --- |
+| cl-01b | The ladder is Blocked, Repeats a pattern, Patch-test first, No conflicts | pass |
+| cl-02b | Blocked wins: she avoids fragrance and it lists Parfum | pass |
+| cl-03b | Repeats a pattern: it lists her exact irritation suspect | pass |
+| cl-04b | Patch-test first: it lists a lead | pass |
+| cl-05b | No conflicts with your history: nothing of hers matched | pass |
+| cl-06b | The bottom rung is never worded as 'safe' | pass |
+| cl-07b | Incomplete INCI can never read as no conflicts: it reads unknown | pass |
+| cl-08b | A stronger rung still stands on an incomplete label, and carries the tag | pass |
+| cl-09b | A complete label is never tagged incomplete | pass |
+| cl-10b | A family-level suspect is one rung softer than an exact one | pass |
+
+### Cart check: three labelled sources, change nothing, one next step
+
+| Case | Checks | Result |
+| --- | --- | --- |
+| cs-01 | Exactly three sources, labelled from history, skin and shelf | pass |
+| cs-02 | With no scan, the skin source says to scan first | pass |
+| cs-03 | Through the API with no scan, the same line is shown | pass |
+| cs-04 | No scan does not change the verdict rung | pass |
+| cs-05 | Aimed at names a measured top concern, and says which | pass |
+| cs-06 | Her lowest measured score is named as the lowest | pass |
+| cs-07 | Not aimed at a top concern is said plainly | pass |
+| cs-08 | The skin source says 'aimed at' and never that it fixes anything | pass |
+| cs-09 | The shelf source names the duplicate and the new spend | pass |
+| cs-10 | Change nothing is always one of the options | pass |
+| cs-11 | Exactly one next step on every cart check and every triage | pass |
+| cs-12 | Each rung has its own next step | pass |
+| cs-13 | Every result stores its inputs and its rule versions | pass |
+| cs-14 | General knowledge is kept under its own key, out of the counts line | pass |
+
+### Breakout triage: the window, purging, usual spots, one next step
+
+| Case | Checks | Result |
+| --- | --- | --- |
+| tg-01 | The product started inside the 2-8 week window is the top lead | pass |
+| tg-02 | A leave-on in the window ranks above a wash-off in the window | pass |
+| tg-03 | A product used 12 weeks without trouble ranks lowest, with the reason | pass |
+| tg-04 | ...and it is never excluded from the list | pass |
+| tg-05 | The long-use reason says it is not a clean bill | pass |
+| tg-06 | Something started a week ago ranks below the window | pass |
+| tg-07 | No purge without a turnover ingredient, and it says why | pass |
+| tg-08 | A turnover ingredient plus her usual spots plus settling: purge-consistent | pass |
+| tg-09 | The same turnover ingredient, but spots in a NEW area: not a purge | pass |
+| tg-10 | A new area is said to point away from purging | pass |
+| tg-11 | Usual spots are said to be where purging shows up | pass |
+| tg-12 | Settling later than ~6 weeks is not purge-consistent | pass |
+| tg-13 | Symptoms outrank the whole ranking: stop wins | pass |
+| tg-14 | The stop next step opens the visit brief, not a trial | pass |
+| tg-15 | A mild symptom is not a stop | pass |
+| tg-16 | One next step: pause one leave-on product and hold the rest | pass |
+| tg-17 | Zone shares come from masks when there are numbers, and say so | pass |
+| tg-18 | With no mask numbers it uses the tapped zones and says which it used | pass |
+
+### The verdict is written back, and never upgrades a can't-tell
+
+| Case | Checks | Result |
+| --- | --- | --- |
+| lp-01 | A comparable move in the good direction after 4 weeks writes 'suited' | pass |
+| lp-02 | The same move under 4 weeks stays 'not sure' | pass |
+| lp-03 | A move in the wrong direction is not 'suited' | pass |
+| lp-04 | No detectable change never writes 'suited' | pass |
+| lp-05 | Not comparable never writes 'suited' | pass |
+| lp-06 | Several changes never writes 'suited' | pass |
+| lp-07 | No baseline never writes 'suited' | pass |
+| lp-08 | A stop on an itch writes an irritation outcome | pass |
+| lp-09 | A stop on spots writes a breakout outcome | pass |
+| lp-10 | A can't-tell verdict can't soften a reaction she already recorded | pass |
+| lp-11 | Through the real app: a can't-tell verdict writes 'not sure', never 'suited' | pass |
+| lp-12 | Meera's positive trial writes 'suited' into her history | pass |
+
+### The demo personas produce the expected outcomes, from the real engines
+
+| Case | Checks | Result |
+| --- | --- | --- |
+| ps-01 | Riya's scene: her irritation suspect is the shared drying alcohol | pass |
+| ps-02 | Riya's scene: the suspect's counts line | pass |
+| ps-03 | Riya's scene: the azelaic breakout offers a purge reclassification | pass |
+| ps-04 | Riya's scene: the purge offer changes nothing by itself | pass |
+| ps-05 | Store product A repeats a pattern | pass |
+| ps-06 | Store product B's label is incomplete, so it reads unknown | pass |
+| ps-07 | Store product C has no conflicts and is aimed at her measured pores | pass |
+| ps-08 | Riya's breakout: the new sunscreen is the top lead, and it is not a purge | pass |
+| ps-09 | Riya's breakout: the snail mucin ranks low with its reason shown | pass |
+| ps-10 | Meera's positive verdict is on PORES, not redness | pass |
+| ps-11 | Meera's wording stays at 'during this trial', with the caveat | pass |
+| ps-12 | Meera's raw move is 6.0 points, which the 'typical app' line is built from | pass |
+| ps-13 | Itching at Meera's check-in: stop outranks her better scores | pass |
+| ps-14 | The beginner scene starts from nothing at all | pass |
+| ps-15 | The beginner's skin type is labelled 'from your answers' | pass |
+| ps-16 | The beginner's starter is 3 steps, each run through the cart check | pass |
+| ps-17 | A scene writes rows only: no verdict word appears in what it stored | pass |
+
+### Basket: zone split, finish, history skips, unknown labels, owned, shade, wording
+
+| Case | Checks | Result |
+| --- | --- | --- |
+| bk-01 | Oily T-zone, dry cheeks: two moisturisers, one per zone | pass |
+| bk-02 | The two moisturisers are different products, gel on the T-zone, cream on the cheeks | pass |
+| bk-03 | Both zones the same type: one moisturiser for the whole face | pass |
+| bk-04 | Matte instead of dewy changes the T-zone pick to a matte finish | pass |
+| bk-05 | Dewy: the base pick has a dewy finish, and a matte tint is skipped as the wrong finish | pass |
+| bk-06 | The history suspect is skipped with its exact reason | pass |
+| bk-07 | An incomplete ingredient list is never picked; it is skipped as unknown | pass |
+| bk-08 | An owned cleanser is not bought again | pass |
+| bk-09 | A store product already on the shelf moves to 'You already own' | pass |
+| bk-10 | Warm-neutral skin colour: a warm shade at her depth | pass |
+| bk-11 | Cool skin colour: a cool shade | pass |
+| bk-12 | No score, number or 'can't tell' in any user sentence, for every finish | pass |
+| bk-13 | Every basket has exactly one next step | pass |
+| bk-14 | No face measurement: the zones come from the answers, labelled, and every job answers | pass |
+| bk-15 | Riya's basket: owned cleanser, gel T-zone, cream cheeks, dewy tint in her shade | pass |
 

@@ -1,5 +1,15 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { api, ApiError, type Health, type HistoryRecord, type Meta, type Product, type Trial } from "./api";
+import {
+  api,
+  ApiError,
+  type Health,
+  type HistoryRecord,
+  type Meta,
+  type Patterns,
+  type Product,
+  type ProductOutcome,
+  type Trial,
+} from "./api";
 
 interface Store {
   ready: boolean;
@@ -12,6 +22,10 @@ interface Store {
   products: Product[];
   shelf: string[];
   history: HistoryRecord[];
+  /** What happened, product by product (app/outcomes.py). The memory every moment reads. */
+  outcomes: ProductOutcome[];
+  /** The two pattern runs, kept apart. Null until they load; they need no shelf or scan. */
+  patterns: Patterns | null;
   trials: Trial[];
   activeTrial: Trial | null;
   /** Baseline scans saved for the active trial (decides what the "+" button opens). */
@@ -32,18 +46,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     products: [],
     shelf: [],
     history: [],
+    outcomes: [],
+    patterns: null,
     trials: [],
   });
 
   const refresh = useCallback(async () => {
     try {
-      const [health, meta, products, shelf, history, trials] = await Promise.all([
+      const [health, meta, products, shelf, history, trials, outcomes, patterns] = await Promise.all([
         api.health(),
         api.meta(),
         api.catalog(),
         api.shelf(),
         api.history(),
         api.trials(),
+        api.outcomes(),
+        // The patterns run on the outcomes alone, so they are ready before any scan.
+        api.patterns().catch(() => null),
       ]);
       const active = [...trials].reverse().find((t) => t.status === "active");
       const activeBaselineCount = active
@@ -58,6 +77,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         products,
         shelf: shelf.product_ids,
         history,
+        outcomes,
+        patterns,
         trials,
         activeBaselineCount,
       });

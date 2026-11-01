@@ -25,25 +25,38 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import settings  # noqa: F401  (loads backend/.env first)
+from . import basket as BK
+from . import beginner as B
+from . import cartcheck as CKT
 from . import decision as D
 from . import demo
+from . import demo_faces as DF
 from . import evidence as E
 from . import guard as G
+from . import outcomes as OC
+from . import patterns as PAT
 from . import photometa as P
 from . import facecrop as F
 from . import llm as L
+from . import needs as ND
+from . import products as PRD
 from . import scenes as S
+from . import triage as TRI
+from . import undertone as UT
+from . import writeback as WB
 from .fingerprint import Fingerprint, measure_normalised
 from .settings import flag
-from .youcam import (YouCamClient, YouCamError, actions_for_mode, check_unit_reserve, delete_task_quietly,
-                     download_masks, scan_cost_from, strip_urls, validate_actions)
+from .youcam import (MAKEUP_VTO, SKIN_TONE, YouCamClient, YouCamError, actions_for_mode, check_unit_reserve,
+                     delete_task_quietly, download_masks, download_render, normalize, scan_cost_from,
+                     strip_urls, validate_actions)
 
 log = logging.getLogger("dermos")
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 DB_PATH = Path(os.environ.get("DERMOS_DB", BACKEND_DIR / "dermos.db"))
 MEDIA_DIR = Path(os.environ.get("DERMOS_MEDIA", BACKEND_DIR / "media"))
 MEDIA_DIR.mkdir(parents=True, exist_ok=True)
-CATALOG = D.load_catalog()
+# Every product the app can check: its own catalogue plus the shop's sale stock (app/products.py).
+CATALOG = PRD.index()
 # The app's default concern set: 4 SD concerns = the 9-unit price tier.
 DEFAULT_ACTIONS = ("redness", "acne", "texture", "pore")
 DEFAULT_UNIT_RESERVE = 200
@@ -85,7 +98,11 @@ app.mount("/media", StaticFiles(directory=MEDIA_DIR), name="media")
 # ---------------------------------------------------------------- storage
 # One table per kind, JSON bodies. Small on purpose: swap for Postgres by
 # replacing these four functions.
-KINDS = ("history", "shelf", "captures", "trials")
+# "outcomes" is what happened when a product was used (app/outcomes.py). It is a separate kind
+# from "history" on purpose: the three history record types and their blocking rules are
+# untouched, and an outcome only ever describes, never blocks.
+# "baskets" stores each basket the shopping flow built, with every input it was built from.
+KINDS = ("history", "shelf", "captures", "trials", "outcomes", "baskets")
 
 
 def _db() -> sqlite3.Connection:
@@ -887,12 +904,389 @@ def get_trial(tid: str):
     return t
 
 
+# ---------------------------------------------------------------- outcomes (what happened)
+class OutcomeIn(BaseModel):
+    product_id: str
+    outcome: Literal["suited", "irritation", "breakout", "not_sure"]
+    started_on: date | None = None
+    stopped_on: date | None = None
+    weeks_used_given: int | None = Field(None, ge=0, le=520)
+    zones: list[str] = []
+    usual_spots: bool | None = None
+    settled_while_using: bool | None = None
+    settled_week: int | None = Field(None, ge=0, le=104)
+    note: str = ""
+
+
+def _outcome(row: dict) -> OC.ProductOutcome:
+    return OC.ProductOutcome.from_dict(row)
+
+
+def _outcomes() -> list[OC.ProductOutcome]:
+    return [_outcome(r) for r in all_("outcomes") if r.get("product_id") in CATALOG]
+
+
+@app.get("/api/outcomes")
+def list_outcomes():
+    return [o.to_dict() for o in _outcomes()]
+
+
+@app.post("/api/outcomes")
+def add_outcome(o: OutcomeIn):
+    """One product, what happened. `leave_on` is never taken from the client: it is the catalog's."""
+    if o.product_id not in CATALOG:
+        raise HTTPException(404, f"Unknown product {o.product_id}")
+    try:
+        built = OC.ProductOutcome(leave_on=CATALOG[o.product_id].leave_on,
+                                  **o.model_dump(mode="json"))
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    # One outcome per product: recording what happened again replaces the earlier row.
+    prior = next((r for r in all_("outcomes") if r.get("product_id") == o.product_id), None)
+    row = built.to_dict()
+    return put("outcomes", row, id=(prior or {}).get("id"))
+
+
+@app.delete("/api/outcomes/{oid}")
+def remove_outcome(oid: str):
+    delete("outcomes", oid)
+    return {"deleted": oid}
+
+
+# ---------------------------------------------------------------- patterns
+def _measured() -> dict[str, float]:
+    """The user's most recent measured scores, averaged over that one scan set.
+
+    "Most recent" is the latest capture's own sitting: every capture taken within a few minutes of
+    the newest one. Nothing is averaged across different lighting or different days, because that
+    is exactly what the comparability gate exists to stop.
+    """
+    caps = [c for c in all_("captures") if c.get("raw_scores")]
+    if not caps:
+        return {}
+    caps.sort(key=lambda c: c.get("taken_at") or "")
+    newest = _when(caps[-1]["taken_at"])
+    sitting = [c for c in caps if abs((newest - _when(c["taken_at"])).total_seconds()) <= 3600]
+    out: dict[str, list[float]] = {}
+    for c in sitting:
+        for k, v in (c["raw_scores"] or {}).items():
+            if isinstance(v, (int, float)):
+                out.setdefault(k, []).append(float(v))
+    return {k: round(sum(v) / len(v), 2) for k, v in out.items()}
+
+
+def _reports() -> dict[str, PAT.PatternReport]:
+    return PAT.run_both(_outcomes(), CATALOG)
+
+
+@app.get("/api/patterns")
+def patterns():
+    """Both runs, kept apart: irritation and breakout never share a suspect list."""
+    r = _reports()
+    return {"irritation": r["irritation"].to_dict(), "breakout": r["breakout"].to_dict(),
+            "rule_version": PAT.RULE_VERSION, "families_version": PAT.FAM.FAMILIES_VERSION}
+
+
+# ---------------------------------------------------------------- cart check (before you buy)
+class CartCheckIn(BaseModel):
+    product_id: str
+    # Lets the store page ask "what would this say with no scan yet?" without deleting scans.
+    use_scan: bool = True
+
+
+@app.post("/api/cartcheck")
+def cart_check(body: CartCheckIn):
+    if body.product_id not in CATALOG:
+        raise HTTPException(404, f"Unknown product {body.product_id}")
+    measured = _measured() if body.use_scan else {}
+    res = CKT.check(CATALOG[body.product_id], _records(), _outcomes(), CATALOG,
+                    measured, get_shelf()["product_ids"], reports=_reports())
+    return res.to_dict()
+
+
+@app.get("/api/store")
+def store():
+    """The sale page's listings, each with its normal price, its sale price and the shop's blurb."""
+    s = PRD.sale()
+    items = []
+    for i in s["items"]:
+        p = CATALOG.get(i["product_id"])
+        if p is None:
+            continue
+        items.append({**i, "product": p.__dict__})
+    return {"name": s["name"], "line": s["line"], "items": items,
+            "disclaimer": "A fictional shop, invented for this demo. The blurbs are the shop's; "
+                          "derm//os checks the label instead of trusting them."}
+
+
+# ---------------------------------------------------------------- triage (after a breakout)
+class TriageIn(BaseModel):
+    symptoms: list[str] = []
+    zones: list[str] = []
+    usual_spots: bool | None = None
+    # What is on the skin and since when. Defaults to the shelf with no dates, which the engine
+    # then reports as "no start date recorded" rather than guessing one.
+    using: list[dict] | None = None
+    settled_while_using: bool | None = None
+    settled_week: int | None = Field(None, ge=0, le=104)
+
+
+@app.post("/api/triage")
+def triage(body: TriageIn):
+    using = body.using
+    if using is None:
+        using = [{"product_id": i, "started_on": None} for i in get_shelf()["product_ids"]]
+    bad = [u.get("product_id") for u in using if u.get("product_id") not in CATALOG]
+    if bad:
+        raise HTTPException(404, f"Unknown products {bad}")
+    shares, baseline_shares = _zone_shares()
+    res = TRI.assess(body.symptoms, body.zones, body.usual_spots, using, CATALOG,
+                     body.settled_while_using, body.settled_week, shares, baseline_shares)
+    return res.to_dict()
+
+
+def _zone_shares() -> tuple[dict, dict]:
+    """Per-zone acne share, from stored mask measurements only.
+
+    Nothing here opens an image. A capture may carry `zone_shares` written when its masks were
+    measured; where no capture has them, this returns empty and triage falls back to the zones the
+    user tapped and says so. That is why there is no mask-reading code in this file.
+    """
+    caps = [c for c in all_("captures") if (c.get("zone_shares") or {}).get("acne")]
+    if not caps:
+        return {}, {}
+    caps.sort(key=lambda c: c.get("taken_at") or "")
+    base = next((c for c in caps if c.get("phase") == "baseline"), None)
+    return (caps[-1]["zone_shares"]["acne"],
+            (base or {}).get("zone_shares", {}).get("acne", {}))
+
+
+# ---------------------------------------------------------------- verdict write-back
+def _writeback_plan(tid: str) -> WB.WriteBack:
+    ev = trial_evidence(tid)
+    t = ev["trial"]
+    p = CATALOG[t["product_id"]]
+    prior = next((r for r in all_("outcomes") if r.get("product_id") == p.id), None)
+    return WB.plan(ev["report"], p.id, p.leave_on, t["started_at"],
+                   goal_concern=t.get("goal_concern"), trial_id=tid,
+                   existing=_outcome(prior) if prior else None)
+
+
+@app.get("/api/trials/{tid}/writeback")
+def writeback_preview(tid: str):
+    """What this trial's stored verdict would write into the product's history. Writes nothing."""
+    return _writeback_plan(tid).to_dict()
+
+
+@app.post("/api/trials/{tid}/writeback")
+def writeback_apply(tid: str):
+    """Write this trial's stored verdict into the product's history outcome.
+
+    The verdict is read from GET /evidence, never recomputed here, and a can't-tell verdict can
+    never be written as "suited" (app/writeback.py).
+    """
+    wb = _writeback_plan(tid)
+    prior = next((r for r in all_("outcomes") if r.get("product_id") == wb.outcome.product_id), None)
+    row = put("outcomes", wb.outcome.to_dict(), id=(prior or {}).get("id"))
+    return {**wb.to_dict(), "outcome": row}
+
+
+# ---------------------------------------------------------------- start here (beginners)
+class BeginnerIn(BaseModel):
+    answers: dict[str, str] = {}
+
+
+@app.get("/api/beginner/questions")
+def beginner_questions():
+    return {"questions": B.QUESTIONS, "rule_version": B.RULE_VERSION}
+
+
+@app.post("/api/beginner/plan")
+def beginner_plan(body: BeginnerIn):
+    """Quiz into a skin type, the top measured concerns, and a 3-step starter that has been run
+    through the cart check. Skin type is labelled "from your answers" until a scan supplies one."""
+    return B.plan(body.answers, CATALOG, _records(), _measured(),
+                  shelf=get_shelf()["product_ids"]).to_dict()
+
+
+# ---------------------------------------------------------------- the basket (shop by your face)
+BASKET_QUESTIONS = [
+    {"id": "finish", "text": "Which finish do you want?",
+     "why": "It decides textures: a glow finish for dewy, oil control for matte.",
+     "choices": [{"value": "dewy", "label": "Glowy / dewy"}, {"value": "natural", "label": "Natural"},
+                 {"value": "matte", "label": "Matte"}]},
+    {"id": "history", "text": "Anything that itched or broke you out before?",
+     "why": "Your saved history is checked against every label, so nothing that bothered you comes back.",
+     "skippable": True,
+     "choices": [{"value": "use", "label": "Check against my history"},
+                 {"value": "ignore", "label": "Skip for this basket"}]},
+    {"id": "budget", "text": "Budget per product (optional)", "skippable": True,
+     "why": "Over-budget products are skipped while something under it fits.",
+     "choices": [{"value": "under_700", "label": "Under ₹700"}, {"value": "under_1000", "label": "Under ₹1,000"},
+                 {"value": "any", "label": "Any price"}]},
+]
+
+
+class BasketIn(BaseModel):
+    answers: dict[str, str] = {}
+    persona: str = "riya"
+
+
+@app.get("/api/basket/questions")
+def basket_questions():
+    recs, outs = _records(), _outcomes()
+    return {"questions": BASKET_QUESTIONS, "on_record": {"records": len(recs), "outcomes": len(outs),
+            "bothered": sum(1 for o in outs if o.outcome in ("irritation", "breakout"))},
+            "rule_version": BK.RULE_VERSION}
+
+
+def _basket_from(skin_payload, tone_payload, answers: dict, *, demo_: bool, source: str,
+                 src_file_id: str | None = None, renders: dict | None = None,
+                 extra: dict | None = None) -> dict:
+    """Payloads of the documented shapes -> face map, basket and try-on. Stored with its inputs."""
+    zones = ND.read_zones(skin_payload, answers)
+    measured = normalize(skin_payload, "sd", DF.BASKET_ACTIONS).raw_scores() if skin_payload else {}
+    ut = UT.from_payload(tone_payload, answers)
+    b = BK.build(zones=zones, measured=measured, ut=ut, answers=answers, stock=PRD.shop_tags(),
+                 catalog=CATALOG, records=_records(), outcomes=_outcomes(),
+                 shelf=get_shelf()["product_ids"], demo=demo_, src_file_id=src_file_id)
+    out = b.to_dict()
+    if renders:
+        out["tryon"]["looks"] = [{**lk, "image": renders.get(lk["look"])} for lk in out["tryon"]["looks"]]
+        if all(lk["image"] for lk in out["tryon"]["looks"]):
+            out["tryon"].update(status="ready", line=None)
+    row = put("baskets", {"source": source, "demo": demo_, "basket": out,
+                          "taken_at": datetime.now(timezone.utc).isoformat(), **(extra or {})})
+    return {**out, "id": row["id"], "source": source}
+
+
+def _replay_basket(persona: str, answers: dict, reason: str | None, notice: str | None = None) -> dict:
+    face = DF.load_face(persona)
+    if face is None:
+        raise HTTPException(404, f"No demo face for persona {persona!r}.")
+    res = _basket_from(face["skin"], face["tone"], answers, demo_=True, source="replay",
+                       renders=face.get("renders"),
+                       extra={"replay": {"persona": persona, "synthetic": face["synthetic"], "reason": reason}})
+    res["demo_label"] = face["label"]
+    res["notice"] = notice
+    return res
+
+
+@app.post("/api/basket")
+def basket(body: BasketIn):
+    """The demo persona's face (prepared data, labelled) -> face map, basket, try-on. No YouCam call."""
+    answers = {**(DF.load_face(body.persona) or {}).get("answers", {}), **body.answers}
+    return _replay_basket(body.persona, answers, "demo_persona")
+
+
+def _live_basket(prep: Prepared, answers: dict) -> dict | None:
+    """One live run: skin analysis (skin_type + 7 concerns), skin tone, then two try-on renders.
+    Returns None (and the caller replays) when the balance floor or the judge caps say no."""
+    client = YouCamClient()
+    skin_cost = scan_cost_from({}, client.version, DF.BASKET_ACTIONS)[0]
+    try:
+        skin_cost = client.scan_cost(DF.BASKET_ACTIONS)[0]
+    except Exception:  # noqa: BLE001 - the built-in price stands
+        pass
+    tone_cost = client.feature_cost(SKIN_TONE)[0]
+    vto_cost = client.feature_cost(MAKEUP_VTO)[0]
+    total = skin_cost + tone_cost + 2 * vto_cost
+    bal, floored = G.balance_floor(client, total)
+    if floored:
+        return {"_replay": floored, "_notice": G.floor_message(floored)}
+    hold, capped = hold_units(total)
+    if capped:
+        return {"_replay": capped, "_notice": G.cap_message(capped)}
+    spent_any = False
+    task_ids: list[str] = []
+    try:
+        check_unit_reserve(client, unit_reserve(), total, balance=bal)
+        log.info("YouCam basket run: skin %s + tone %s + 2 x try-on %s = %s units; balance %s.",
+                 skin_cost, tone_cost, vto_cost, total, bal)
+        skin = client.analyze(prep.norm_path, DF.BASKET_ACTIONS)
+        spent_any = True
+        task_ids.append(skin.task_id)
+        tone = client.skin_tone(prep.norm_path)
+        task_ids.append(tone.task_id)
+        first = _basket_from(skin.raw, tone.raw, answers, demo_=False, source="live")
+        renders: dict[str, str] = {}
+        cap_id = first["id"]
+        shade = (first["tryon"] or {}).get("shade")
+        for req in (first["tryon"] or {}).get("requests", []) if shade else []:
+            vto = client.makeup_vto(req["body"]["effects"], image_path=prep.norm_path)
+            task_ids.append(vto.task_id)
+            saved = download_render(vto.image_url, MEDIA_DIR / cap_id / f"tryon_{req['look']}",
+                                    getattr(client, "upload_http", None))
+            if saved:
+                renders[req["look"]] = _media_url(saved)
+    except YouCamError as e:
+        settle_units(hold, spent=spent_any)
+        if e.code == "unit_reserve":
+            raise HTTPException(402, e.friendly)
+        raise HTTPException(502 if e.code not in (None, "no_key") else 503, e.friendly)
+    except Exception:
+        settle_units(hold, spent=spent_any)
+        raise
+    finally:
+        # Results are saved locally, so the copies at YouCam (photo + outputs) are not needed.
+        deleted = [delete_task_quietly(client, t) for t in task_ids if t]
+    settle_units(hold, spent=True)
+    delete("baskets", first["id"])
+    return _basket_from(skin.raw, tone.raw, answers, demo_=False, source="live", renders=renders,
+                        extra={"youcam": {"task_ids": task_ids, "deleted": all(deleted), "cost_units": total}})
+
+
+@app.post("/api/basket/scan")
+async def basket_scan(request: Request, image: UploadFile | None = File(None),
+                      answers: str = Form("{}"), persona: str = Form("riya"),
+                      x_live_passcode: str | None = Header(None)):
+    """A selfie -> face map + basket + try-on. Live only with DEMO_MODE=0 and the passcode; any
+    other case replays the demo persona's prepared face, labelled, and never calls YouCam."""
+    SCAN_LIMITER.check(G.client_ip(request))
+    try:
+        ans = json.loads(answers or "{}")
+        if not isinstance(ans, dict):
+            raise ValueError
+    except ValueError:
+        raise HTTPException(422, "answers must be a JSON object")
+    ans = {**(DF.load_face(persona) or {}).get("answers", {}), **{k: str(v) for k, v in ans.items()}}
+    want, reason = G.scan_source(x_live_passcode)
+    if want != "live" or image is None:
+        return _replay_basket(persona, ans, reason or "no_photo")
+    raw = await image.read()
+    try:
+        prep = _prepare(raw, "sd", None, "upload")
+    except (F.Refusal, P.UploadRefused, F.DetectorUnavailable) as e:
+        raise _refusal(e)
+    try:
+        res = _live_basket(prep, ans)
+    except YouCamError as e:
+        raise HTTPException(503, e.friendly)
+    finally:
+        prep.cleanup()
+    if res and "_replay" in res:
+        return _replay_basket(persona, ans, res["_replay"], res["_notice"])
+    return res
+
+
 @app.get("/api/meta")
 def meta():
     """Rules the UI needs to show, straight from the engine so copy never drifts."""
     return {"stop_symptoms": sorted(E.STOP_SYMPTOMS), "verdict_text": {v.value: m for v, m in E.VERDICT_TEXT.items()},
             "tolerances": E.TOLERANCES, "min_band": E.MIN_BAND, "capture": F.describe(),
-            "record_types": [r.value for r in D.RecordType], "rules": [D.RULE_VERSION, E.RULE_VERSION]}
+            "record_types": [r.value for r in D.RecordType], "rules": [D.RULE_VERSION, E.RULE_VERSION],
+            # The new engines' own rules and vocabulary, so the UI never hard-codes a list.
+            "outcomes": {"values": [o.value for o in OC.Outcome], "labels": OC.OUTCOME_LABEL,
+                         "too_early": OC.TOO_EARLY, "suited_min_weeks": OC.SUITED_MIN_WEEKS,
+                         "zones": list(OC.FACE_ZONES)},
+            "cartcheck": {"ladder": [r.value for r in CKT.LADDER], "labels": CKT.RUNG_LABEL,
+                          "unknown_label": CKT.UNKNOWN_LABEL, "no_scan_line": CKT.NO_SCAN_LINE},
+            "patterns": {"tiers": [t.value for t in PAT.Tier], "labels": PAT.TIER_LABEL},
+            "triage": {"window_weeks": list(TRI.WINDOW_WEEKS), "long_use_weeks": TRI.LONG_USE_WEEKS,
+                       "purge_settle_weeks": TRI.PURGE_SETTLE_WEEKS},
+            "engine_rules": [D.RULE_VERSION, E.RULE_VERSION, OC.RULE_VERSION, PAT.RULE_VERSION,
+                             CKT.RULE_VERSION, TRI.RULE_VERSION, WB.RULE_VERSION, B.RULE_VERSION,
+                             PAT.FAM.FAMILIES_VERSION, BK.RULE_VERSION, ND.RULE_VERSION, UT.RULE_VERSION]}
 
 
 def build_scene(name: str) -> dict:

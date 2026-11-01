@@ -6,6 +6,7 @@ import { useRoute } from "./router";
 import { GuideBar } from "./components/Guide";
 import { Waking } from "./components/Waking";
 import Demo from "./screens/Demo";
+import Basket from "./screens/Basket";
 import Brief from "./screens/Brief";
 import Capture from "./screens/Capture";
 import Checkin from "./screens/Checkin";
@@ -18,6 +19,7 @@ import Progress from "./screens/Progress";
 import Results from "./screens/Results";
 import Routine from "./screens/Routine";
 import Shelf from "./screens/Shelf";
+import Store from "./screens/Store";
 import Trial from "./screens/Trial";
 import Welcome from "./screens/Welcome";
 import { useStore } from "./store";
@@ -66,6 +68,26 @@ export default function App() {
       break;
     case "start":
       screen = <Intent />;
+      tab = "none";
+      break;
+    // Start here: the beginner path (STRATEGY section 4, "Start here"), on the Intent screen.
+    case "start-here":
+      screen = <Intent beginner />;
+      tab = "none";
+      break;
+    // Strategy v2, the hero flow: build my basket from my face.
+    case "basket":
+      screen = <Basket />;
+      tab = "none";
+      break;
+    // Moment 1: the sale page, and a product's check opened in place.
+    case "store":
+      screen = <Store checkId={b ?? null} key={b ?? "list"} />;
+      tab = "none";
+      break;
+    // Moment 2: after a breakout, on the Checkin screen with no trial attached.
+    case "breakout":
+      screen = <Checkin key="breakout" />;
       tab = "none";
       break;
     case "demo":

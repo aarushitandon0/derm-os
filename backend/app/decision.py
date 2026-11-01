@@ -46,6 +46,9 @@ class Product:
     price_inr: int
     inci: list[str]
     inci_complete: bool
+    # What the product's own claims are aimed at, in YouCam concern names. The wording stays
+    # "aimed at", never "fixes": it is the label's intent, not a measured effect (app/cartcheck.py).
+    aimed_at: list[str] = field(default_factory=list)
     source: str = ""
 
     @property

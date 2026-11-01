@@ -4,7 +4,18 @@
 //   - symptoms outrank scores
 //   - unknown is never a pass
 //   - decision support, never diagnosis
-import type { Capture, CheckStatus, ConditionField, Place, RecordType, VerdictCode } from "./api";
+import type {
+  CartRung,
+  Capture,
+  CheckStatus,
+  ConditionField,
+  EffectiveOutcome,
+  FaceZone,
+  PatternTier,
+  Place,
+  RecordType,
+  VerdictCode,
+} from "./api";
 
 export type Tone = "stop" | "unsure" | "steady" | "moved";
 
@@ -285,3 +296,186 @@ export const UPLOAD = {
     phase === "baseline" ? `${n} photos saved. These set your normal range.` : `${n} photos saved and compared with your first photos.`,
   userConfirmed: "You confirmed these were taken in one sitting; that's noted with them.",
 };
+
+// ------------------------------------------------------------------ the three moments
+// docs/STRATEGY.md section 4. Home asks one question and offers the three moments people
+// actually have, plus a way in for someone who has never used anything.
+export const HOME_QUESTION = "What's going on with your skin today?";
+export const HOME_VALUE_LINE =
+  "derm//os checks products against your own skin and your own history.";
+
+export type MomentId = "buy" | "breakout" | "mirror" | "start";
+
+export const MOMENTS: { id: MomentId; label: string; sub: string; to: string }[] = [
+  {
+    id: "buy",
+    label: "I'm about to buy something",
+    sub: "Check it against your skin, your history and your shelf before you spend.",
+    to: "/store",
+  },
+  {
+    id: "breakout",
+    label: "My skin just broke out",
+    sub: "Work out what changed 2–8 weeks ago, and whether it could be purging.",
+    to: "/breakout",
+  },
+  {
+    id: "mirror",
+    label: "Is my product working?",
+    sub: "An honest read on your scans, including when they can't tell yet.",
+    to: "/progress",
+  },
+];
+
+export const START_HERE = {
+  label: "New to skincare? Start here",
+  sub: "Four questions, a scan, and a 3-step starter checked against your answers.",
+  to: "/start-here",
+};
+
+// ------------------------------------------------------------------ outcomes
+export const OUTCOME: Record<EffectiveOutcome, { label: string; chip: string; tone: Tone }> = {
+  suited: { label: "Suited me", chip: "Suited", tone: "moved" },
+  irritation: { label: "Itched, stung or burned", chip: "Irritation", tone: "stop" },
+  breakout: { label: "Broke me out", chip: "Breakout", tone: "stop" },
+  not_sure: { label: "Not sure", chip: "Not sure", tone: "unsure" },
+  too_early: { label: "Too early to say", chip: "Too early", tone: "unsure" },
+};
+
+export const OUTCOME_HELP: Record<string, string> = {
+  suited: "You used it and your skin was fine. It only counts as evidence after 4 weeks.",
+  irritation: "It itched, stung, burned or turned you red.",
+  breakout: "It gave you spots or closed comedones.",
+  not_sure: "You used it and genuinely can't say either way.",
+};
+
+export const OUTCOMES_LEDE =
+  "What happened, product by product. This is the memory every other screen reads.";
+export const SUITED_RULE =
+  "“Suited” only counts after 4 weeks of use. Under that it reads “too early to say” and clears nothing.";
+export const LEAVE_ON_LABEL = { true: "Stays on", false: "Washed off" };
+
+export const ZONE_LABEL: Record<FaceZone, string> = {
+  forehead: "Forehead",
+  nose: "Nose",
+  cheeks: "Cheeks",
+  chin: "Chin",
+  jaw: "Jaw",
+};
+
+// ------------------------------------------------------------------ patterns
+export const TIER: Record<PatternTier, { label: string; tone: Tone; help: string }> = {
+  suspect: {
+    label: "Suspect",
+    tone: "stop",
+    help: "In at least 2 products that gave you this problem, and none that suited you.",
+  },
+  lead: {
+    label: "Lead",
+    tone: "unsure",
+    help: "In 1 product that gave you this problem, and none that suited you. Not enough to call it.",
+  },
+  cleared_so_far: {
+    label: "Used without this problem",
+    tone: "steady",
+    help: "It is also in something that suited you, so your own history doesn't point at it.",
+  },
+};
+
+export const PATTERN_KIND: Record<"irritation" | "breakout", { label: string; sub: string }> = {
+  irritation: { label: "Itching, stinging, burning", sub: "Kept apart from breakouts on purpose." },
+  breakout: { label: "Spots and closed comedones", sub: "Kept apart from irritation on purpose." },
+};
+
+export const PERSONAL_LABEL = "From your own records";
+export const GENERAL_LABEL = "General knowledge, not about you";
+export const EXACT_VS_FAMILY = {
+  exact: "The same ingredient, by name",
+  family: "A family match, which ranks below an exact one",
+};
+
+// ------------------------------------------------------------------ cart check
+export const CART_RUNG: Record<CartRung, { tone: Tone; kicker: string }> = {
+  blocked: { tone: "stop", kicker: "Blocked" },
+  repeats_a_pattern: { tone: "stop", kicker: "Repeats a pattern" },
+  patch_test_first: { tone: "unsure", kicker: "Patch-test first" },
+  no_conflicts: { tone: "steady", kicker: "No conflicts with your history" },
+};
+
+export const CART_LEDE =
+  "One product, checked against three things that are all yours. Never a recommendation.";
+export const NEXT_STEP_LABEL = "Your next step";
+export const CHANGE_NOTHING_LABEL = "Or change nothing";
+export const SOURCE_HELP: Record<string, string> = {
+  history: "What your own recorded reactions say about this label.",
+  skin: "What YouCam measured, against what this product says it is for.",
+  shelf: "What it would duplicate or replace, and what it would cost you.",
+};
+
+// ------------------------------------------------------------------ store
+export const STORE_HELP =
+  "A fictional shop, invented for this demo. Tap “Check against my skin” on anything.";
+export const CHECK_AGAINST = "Check against my skin";
+
+// ------------------------------------------------------------------ breakout triage
+export const BREAKOUT = {
+  title: "What changed?",
+  lede: "Breakouts from a product usually show up 2–8 weeks later, so we rank by when things started.",
+  whenQ: "When did it start?",
+  whereQ: "Where is it?",
+  usualQ: "Are those your usual spots?",
+  usualWhy: "Purging shows up where you normally break out. Spots in a new area point elsewhere.",
+  symptomQ: "Any itching, burning or swelling?",
+  symptomWhy: "A reaction you can feel outranks everything below.",
+  rankingLabel: "What changed, most likely first",
+  windowLabel: "In the 2–8 week window",
+  purgeLabel: "Could it be purging?",
+  zonesLabel: "Where the spots are",
+  usualYes: "Yes, my usual spots",
+  usualNo: "No, this is a new area",
+  usualUnsure: "I'm not sure",
+};
+
+export const TRIAGE_TIER_TONE: Record<number, Tone> = {
+  0: "stop",
+  1: "unsure",
+  2: "unsure",
+  3: "unsure",
+  4: "steady",
+  5: "steady",
+};
+
+// ------------------------------------------------------------------ the evidence view
+/** The grey line above the derm//os verdict, computed from the raw score difference alone. */
+export function typicalAppLine(concern: string, deltaMid: number | null): string | null {
+  if (deltaMid === null || !Number.isFinite(deltaMid)) return null;
+  const points = Math.round(Math.abs(deltaMid));
+  if (points < 1) return null;
+  const verb = deltaMid > 0 ? "improved" : "got worse by";
+  return `A typical app would say: ${concernLabel(concern)} ${verb} ${points} point${points === 1 ? "" : "s"}!`;
+}
+export const TYPICAL_APP_LABEL = "What most apps would tell you";
+export const DERMOS_SAYS_LABEL = "What derm//os says";
+
+// ------------------------------------------------------------------ write-back
+export const WRITEBACK = {
+  label: "Remember this result",
+  lede: "The verdict goes into this product's record, so your next purchase check knows it.",
+  done: "Written into your history.",
+  refused: "Recorded as “not sure”. A result that can't tell either way is never filed as suiting you.",
+  button: "Write this into my history",
+};
+
+// ------------------------------------------------------------------ start here
+export const BEGINNER = {
+  title: "Start here",
+  lede: "Four questions, then your skin type and top concerns in plain words.",
+  typeLabel: "Your skin type",
+  concernsLabel: "What YouCam measured",
+  starterLabel: "A 3-step starter, checked against your answers",
+  oneAtATimeLabel: "How to start it",
+  noScanYet:
+    "No scan yet, so your skin type here comes from your answers. A scan can read it directly.",
+};
+
+export const DEMO_DATA_TAG = "Demo data";

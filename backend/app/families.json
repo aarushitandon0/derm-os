@@ -1,0 +1,48 @@
+{
+  "version": "families-1.0",
+  "note": "Curated ingredient families (CAMP-style cross-reactor groups) and the purge-capable list. Every entry is a claim we can defend from the sources in docs/STRATEGY.md section 2. An exact ingredient match always ranks above a family match.",
+  "families": {
+    "fragrance": {
+      "label": "fragrance and its declared components",
+      "members": ["fragrance", "limonene", "linalool", "citronellol", "geraniol", "citral", "eugenol", "coumarin"],
+      "general_note": "Fragrance components are among the most commonly reported contact irritants."
+    },
+    "essential oils": {
+      "label": "essential oils",
+      "members": ["essential oils"],
+      "general_note": "Essential oils carry the same fragrance components in less predictable amounts."
+    },
+    "drying alcohols": {
+      "label": "drying alcohols",
+      "members": ["alcohol denat"],
+      "general_note": "Short-chain alcohols evaporate fast and are often reported as stinging on dry or compromised skin. Fatty alcohols such as cetearyl alcohol are a different thing and are not in this family."
+    },
+    "retinoids": {
+      "label": "retinoids",
+      "members": ["retinol", "retinal", "tretinoin", "adapalene"],
+      "general_note": "Retinoids speed up cell turnover."
+    },
+    "ahas": {
+      "label": "AHAs",
+      "members": ["glycolic acid", "lactic acid", "mandelic acid"],
+      "general_note": "AHAs exfoliate and speed up cell turnover."
+    },
+    "bha": {
+      "label": "BHA",
+      "members": ["salicylic acid"],
+      "general_note": "Salicylic acid exfoliates inside the pore."
+    }
+  },
+  "purge_capable": {
+    "retinol": {"strength": "can", "note": "Retinoids speed up cell turnover, so purging is possible."},
+    "retinal": {"strength": "can", "note": "Retinoids speed up cell turnover, so purging is possible."},
+    "tretinoin": {"strength": "can", "note": "Retinoids speed up cell turnover, so purging is possible."},
+    "adapalene": {"strength": "can", "note": "Retinoids speed up cell turnover, so purging is possible."},
+    "glycolic acid": {"strength": "can", "note": "AHAs speed up cell turnover, so purging is possible."},
+    "lactic acid": {"strength": "can", "note": "AHAs speed up cell turnover, so purging is possible."},
+    "mandelic acid": {"strength": "can", "note": "AHAs speed up cell turnover, so purging is possible."},
+    "salicylic acid": {"strength": "can", "note": "Salicylic acid speeds up turnover inside the pore, so purging is possible."},
+    "azelaic acid": {"strength": "mild", "note": "Azelaic acid can cause mild purging in some people, usually in the first 2-6 weeks."},
+    "gluconolactone": {"strength": "mild", "note": "Gluconolactone is a mild PHA, so mild purging is possible."}
+  }
+}

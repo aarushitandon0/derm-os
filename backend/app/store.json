@@ -1,0 +1,917 @@
+{
+  "version": "store-1.1",
+  "note": "A fictional shop's own stock and its sale. Every brand, product, price and blurb here is invented for the demo. The blurbs are deliberately written the way shop copy is written, because the point of the store page is that derm//os checks the product rather than trusting the blurb.",
+  "sale": {
+    "name": "Glowcart Big Sale",
+    "line": "Up to 40% off. Opened skincare can't be returned, so check before you buy.",
+    "items": [
+      {
+        "product_id": "sr-08",
+        "sale_price_inr": 699,
+        "blurb": "Best-seller! Instant glow vitamin C with a fast-drying finish."
+      },
+      {
+        "product_id": "mo-07",
+        "sale_price_inr": 549,
+        "blurb": "Bundle deal. Our dewy barrier cream, now at its lowest price."
+      },
+      {
+        "product_id": "sr-09",
+        "sale_price_inr": 849,
+        "blurb": "Pore-refining niacinamide and zinc gel-serum. Fragrance-free."
+      },
+      {
+        "product_id": "sp-04",
+        "sale_price_inr": 749,
+        "blurb": "Weightless matte sunscreen for oily days. Fragrance-free."
+      }
+    ]
+  },
+  "products": [
+    {
+      "id": "es-01",
+      "name": "Snail Mucin Essence",
+      "brand": "Kora Labs",
+      "role": "serum",
+      "leave_on": true,
+      "price_inr": 890,
+      "inci": [
+        "Snail Secretion Filtrate",
+        "Aqua",
+        "Betaine",
+        "Panthenol",
+        "Sodium Hyaluronate",
+        "Allantoin",
+        "Phenoxyethanol"
+      ],
+      "inci_complete": true,
+      "aimed_at": [
+        "moisture",
+        "texture"
+      ],
+      "source": "Fictional product; INCI modelled on snail mucin essences",
+      "shop": {
+        "job": "serum",
+        "suits": [
+          "oily",
+          "combination",
+          "normal",
+          "dry"
+        ],
+        "texture": "fluid",
+        "finish": "dewy"
+      }
+    },
+    {
+      "id": "sr-08",
+      "name": "Glow Shot Vitamin C",
+      "brand": "Duneglow",
+      "role": "serum",
+      "leave_on": true,
+      "price_inr": 1099,
+      "inci": [
+        "Aqua",
+        "Alcohol Denat.",
+        "Ascorbic Acid 15%",
+        "Propanediol",
+        "Ferulic Acid",
+        "Tocopherol"
+      ],
+      "inci_complete": true,
+      "aimed_at": [
+        "radiance",
+        "age_spot"
+      ],
+      "source": "Fictional product; INCI modelled on alcohol-based vitamin C serums",
+      "shop": {
+        "job": "serum",
+        "suits": [
+          "oily",
+          "combination",
+          "normal",
+          "dry"
+        ],
+        "texture": "fluid",
+        "finish": "natural"
+      }
+    },
+    {
+      "id": "mo-07",
+      "name": "Dew Veil Barrier Cream",
+      "brand": "Duneglow",
+      "role": "moisturiser",
+      "leave_on": true,
+      "price_inr": 899,
+      "inci": [
+        "Aqua",
+        "Glycerin",
+        "Squalane",
+        "Panthenol"
+      ],
+      "inci_complete": false,
+      "aimed_at": [
+        "moisture"
+      ],
+      "source": "Fictional product; ingredient list deliberately incomplete, as sale listings often are",
+      "shop": {
+        "job": "moisturiser",
+        "suits": [
+          "dry",
+          "normal"
+        ],
+        "texture": "cream",
+        "finish": "dewy"
+      }
+    },
+    {
+      "id": "sr-09",
+      "name": "Pore Clarity Gel Serum",
+      "brand": "Nimbus Skin",
+      "role": "serum",
+      "leave_on": true,
+      "price_inr": 1290,
+      "inci": [
+        "Aqua",
+        "Niacinamide 5%",
+        "Zinc PCA",
+        "Pentylene Glycol",
+        "Sodium Hyaluronate",
+        "Xanthan Gum",
+        "Phenoxyethanol"
+      ],
+      "inci_complete": true,
+      "aimed_at": [
+        "pore"
+      ],
+      "source": "Fictional product; INCI modelled on niacinamide and zinc gel serums",
+      "shop": {
+        "job": "serum",
+        "suits": [
+          "oily",
+          "combination",
+          "normal"
+        ],
+        "texture": "gel",
+        "finish": "natural"
+      }
+    },
+    {
+      "id": "sp-04",
+      "name": "Matte Day Shield SPF 50",
+      "brand": "Saltmint",
+      "role": "sunscreen",
+      "leave_on": true,
+      "price_inr": 999,
+      "inci": [
+        "Aqua",
+        "Zinc Oxide",
+        "Isoamyl Laurate",
+        "Silica",
+        "Glycerin",
+        "Dimethicone"
+      ],
+      "inci_complete": true,
+      "aimed_at": [
+        "oiliness",
+        "pore"
+      ],
+      "source": "Fictional product; INCI modelled on mineral matte sunscreens",
+      "shop": {
+        "job": "base",
+        "suits": [
+          "oily",
+          "combination",
+          "normal"
+        ],
+        "texture": "fluid",
+        "finish": "matte",
+        "tinted": false
+      }
+    },
+    {
+      "id": "cl-11",
+      "name": "Clear Gel Cleanser",
+      "brand": "Saltmint",
+      "role": "cleanser",
+      "leave_on": false,
+      "price_inr": 449,
+      "inci": [
+        "Aqua",
+        "Sodium Cocoyl Isethionate",
+        "Glycerin",
+        "Salicylic Acid 0.5%",
+        "Cocamidopropyl Betaine",
+        "Zinc PCA",
+        "Citric Acid",
+        "Phenoxyethanol"
+      ],
+      "inci_complete": true,
+      "aimed_at": [
+        "oiliness",
+        "pore",
+        "acne"
+      ],
+      "source": "Fictional product for the basket demo",
+      "shop": {
+        "job": "cleanser",
+        "suits": [
+          "oily",
+          "combination"
+        ],
+        "texture": "gel",
+        "finish": "natural"
+      }
+    },
+    {
+      "id": "cl-12",
+      "name": "Milk Cream Cleanser",
+      "brand": "Nimbus Skin",
+      "role": "cleanser",
+      "leave_on": false,
+      "price_inr": 399,
+      "inci": [
+        "Aqua",
+        "Glycerin",
+        "Caprylic/Capric Triglyceride",
+        "Cetearyl Alcohol",
+        "Panthenol",
+        "Sodium Lauroyl Lactylate",
+        "Phenoxyethanol"
+      ],
+      "inci_complete": true,
+      "aimed_at": [
+        "moisture"
+      ],
+      "source": "Fictional product for the basket demo",
+      "shop": {
+        "job": "cleanser",
+        "suits": [
+          "dry",
+          "normal"
+        ],
+        "texture": "cream",
+        "finish": "natural"
+      }
+    },
+    {
+      "id": "mo-11",
+      "name": "Cloud Gel Moisturiser",
+      "brand": "Kora Labs",
+      "role": "moisturiser",
+      "leave_on": true,
+      "price_inr": 649,
+      "inci": [
+        "Aqua",
+        "Glycerin",
+        "Niacinamide 4%",
+        "Zinc PCA",
+        "Sodium Hyaluronate",
+        "Carbomer",
+        "Sodium Hydroxide",
+        "Phenoxyethanol"
+      ],
+      "inci_complete": true,
+      "aimed_at": [
+        "oiliness",
+        "pore"
+      ],
+      "source": "Fictional product for the basket demo",
+      "shop": {
+        "job": "moisturiser",
+        "suits": [
+          "oily",
+          "combination"
+        ],
+        "texture": "gel",
+        "finish": "natural"
+      }
+    },
+    {
+      "id": "mo-12",
+      "name": "Shine Blot Matte Gel",
+      "brand": "Saltmint",
+      "role": "moisturiser",
+      "leave_on": true,
+      "price_inr": 599,
+      "inci": [
+        "Aqua",
+        "Silica",
+        "Niacinamide 2%",
+        "Dimethicone",
+        "Glycerin",
+        "Zinc PCA",
+        "Phenoxyethanol"
+      ],
+      "inci_complete": true,
+      "aimed_at": [
+        "oiliness"
+      ],
+      "source": "Fictional product for the basket demo",
+      "shop": {
+        "job": "moisturiser",
+        "suits": [
+          "oily",
+          "combination"
+        ],
+        "texture": "gel",
+        "finish": "matte"
+      }
+    },
+    {
+      "id": "mo-13",
+      "name": "Dewy Water Cream",
+      "brand": "Duneglow",
+      "role": "moisturiser",
+      "leave_on": true,
+      "price_inr": 799,
+      "inci": [
+        "Aqua",
+        "Glycerin",
+        "Sodium Hyaluronate",
+        "Squalane",
+        "Parfum",
+        "Phenoxyethanol"
+      ],
+      "inci_complete": true,
+      "aimed_at": [
+        "moisture",
+        "radiance"
+      ],
+      "source": "Fictional product for the basket demo",
+      "shop": {
+        "job": "moisturiser",
+        "suits": [
+          "dry",
+          "normal"
+        ],
+        "texture": "cream",
+        "finish": "dewy"
+      }
+    },
+    {
+      "id": "mo-14",
+      "name": "Ceramide Cushion Cream",
+      "brand": "Nimbus Skin",
+      "role": "moisturiser",
+      "leave_on": true,
+      "price_inr": 749,
+      "inci": [
+        "Aqua",
+        "Glycerin",
+        "Squalane",
+        "Ceramide NP",
+        "Sodium Hyaluronate",
+        "Panthenol",
+        "Cetearyl Alcohol",
+        "Phenoxyethanol"
+      ],
+      "inci_complete": true,
+      "aimed_at": [
+        "moisture"
+      ],
+      "source": "Fictional product for the basket demo",
+      "shop": {
+        "job": "moisturiser",
+        "suits": [
+          "dry",
+          "normal"
+        ],
+        "texture": "cream",
+        "finish": "dewy"
+      }
+    },
+    {
+      "id": "mo-15",
+      "name": "Shea Night Balm",
+      "brand": "Lumen & Leaf",
+      "role": "moisturiser",
+      "leave_on": true,
+      "price_inr": 999,
+      "inci": [
+        "Butyrospermum Parkii Butter",
+        "Caprylic/Capric Triglyceride",
+        "Glycerin",
+        "Cera Alba",
+        "Tocopherol"
+      ],
+      "inci_complete": true,
+      "aimed_at": [
+        "moisture"
+      ],
+      "source": "Fictional product for the basket demo",
+      "shop": {
+        "job": "moisturiser",
+        "suits": [
+          "dry"
+        ],
+        "texture": "balm",
+        "finish": "natural"
+      }
+    },
+    {
+      "id": "mo-16",
+      "name": "Oat Calm Lotion",
+      "brand": "Ferncove",
+      "role": "moisturiser",
+      "leave_on": true,
+      "price_inr": 549,
+      "inci": [
+        "Aqua",
+        "Glycerin",
+        "Avena Sativa Kernel Flour",
+        "Centella Asiatica Extract",
+        "Panthenol",
+        "Allantoin",
+        "Phenoxyethanol"
+      ],
+      "inci_complete": true,
+      "aimed_at": [
+        "redness",
+        "moisture"
+      ],
+      "source": "Fictional product for the basket demo",
+      "shop": {
+        "job": "moisturiser",
+        "suits": [
+          "normal",
+          "dry"
+        ],
+        "texture": "lotion",
+        "finish": "natural"
+      }
+    },
+    {
+      "id": "tt-01",
+      "name": "Dewdrop Skin Tint SPF 30",
+      "brand": "Duneglow",
+      "role": "sunscreen",
+      "leave_on": true,
+      "price_inr": 899,
+      "inci": [
+        "Aqua",
+        "Alcohol Denat.",
+        "Zinc Oxide",
+        "Glycerin",
+        "Iron Oxides",
+        "Mica",
+        "Phenoxyethanol"
+      ],
+      "inci_complete": true,
+      "aimed_at": [
+        "radiance"
+      ],
+      "source": "Fictional product for the basket demo",
+      "shop": {
+        "job": "base",
+        "suits": [
+          "oily",
+          "combination",
+          "normal",
+          "dry"
+        ],
+        "texture": "fluid",
+        "finish": "dewy",
+        "tinted": true,
+        "shades": [
+          {
+            "name": "F1 Fair Warm",
+            "depth": "fair",
+            "undertone": "warm",
+            "hex": "#ecc8a8"
+          },
+          {
+            "name": "F2 Fair Neutral",
+            "depth": "fair",
+            "undertone": "neutral",
+            "hex": "#ebc6b0"
+          },
+          {
+            "name": "F3 Fair Cool",
+            "depth": "fair",
+            "undertone": "cool",
+            "hex": "#ecc4b8"
+          },
+          {
+            "name": "L1 Light Warm",
+            "depth": "light",
+            "undertone": "warm",
+            "hex": "#d9b08c"
+          },
+          {
+            "name": "L2 Light Neutral",
+            "depth": "light",
+            "undertone": "neutral",
+            "hex": "#d6ad94"
+          },
+          {
+            "name": "L3 Light Cool",
+            "depth": "light",
+            "undertone": "cool",
+            "hex": "#d5aa9c"
+          },
+          {
+            "name": "M1 Medium Warm",
+            "depth": "medium",
+            "undertone": "warm",
+            "hex": "#c09170"
+          },
+          {
+            "name": "M2 Medium Neutral",
+            "depth": "medium",
+            "undertone": "neutral",
+            "hex": "#bb8f78"
+          },
+          {
+            "name": "M3 Medium Cool",
+            "depth": "medium",
+            "undertone": "cool",
+            "hex": "#b98c80"
+          },
+          {
+            "name": "T1 Tan Warm",
+            "depth": "tan",
+            "undertone": "warm",
+            "hex": "#a06e4c"
+          },
+          {
+            "name": "T2 Tan Neutral",
+            "depth": "tan",
+            "undertone": "neutral",
+            "hex": "#9c6c55"
+          },
+          {
+            "name": "T3 Tan Cool",
+            "depth": "tan",
+            "undertone": "cool",
+            "hex": "#996a5e"
+          },
+          {
+            "name": "D1 Deep Warm",
+            "depth": "deep",
+            "undertone": "warm",
+            "hex": "#6e4630"
+          },
+          {
+            "name": "D2 Deep Neutral",
+            "depth": "deep",
+            "undertone": "neutral",
+            "hex": "#6a4536"
+          },
+          {
+            "name": "D3 Deep Cool",
+            "depth": "deep",
+            "undertone": "cool",
+            "hex": "#67443c"
+          },
+          {
+            "name": "L4 Light Olive",
+            "depth": "light",
+            "undertone": "olive",
+            "hex": "#c9ab82"
+          },
+          {
+            "name": "M4 Medium Olive",
+            "depth": "medium",
+            "undertone": "olive",
+            "hex": "#ad8f66"
+          }
+        ]
+      }
+    },
+    {
+      "id": "tt-02",
+      "name": "Second Skin Glow Tint SPF 40",
+      "brand": "Kora Labs",
+      "role": "sunscreen",
+      "leave_on": true,
+      "price_inr": 949,
+      "inci": [
+        "Aqua",
+        "Zinc Oxide",
+        "Glycerin",
+        "Niacinamide 2%",
+        "Squalane",
+        "Sodium Hyaluronate",
+        "Iron Oxides",
+        "Phenoxyethanol"
+      ],
+      "inci_complete": true,
+      "aimed_at": [
+        "radiance"
+      ],
+      "source": "Fictional product for the basket demo",
+      "shop": {
+        "job": "base",
+        "suits": [
+          "oily",
+          "combination",
+          "normal",
+          "dry"
+        ],
+        "texture": "fluid",
+        "finish": "dewy",
+        "tinted": true,
+        "shades": [
+          {
+            "name": "F1 Fair Warm",
+            "depth": "fair",
+            "undertone": "warm",
+            "hex": "#ecc8a8"
+          },
+          {
+            "name": "F2 Fair Neutral",
+            "depth": "fair",
+            "undertone": "neutral",
+            "hex": "#ebc6b0"
+          },
+          {
+            "name": "F3 Fair Cool",
+            "depth": "fair",
+            "undertone": "cool",
+            "hex": "#ecc4b8"
+          },
+          {
+            "name": "L1 Light Warm",
+            "depth": "light",
+            "undertone": "warm",
+            "hex": "#d9b08c"
+          },
+          {
+            "name": "L2 Light Neutral",
+            "depth": "light",
+            "undertone": "neutral",
+            "hex": "#d6ad94"
+          },
+          {
+            "name": "L3 Light Cool",
+            "depth": "light",
+            "undertone": "cool",
+            "hex": "#d5aa9c"
+          },
+          {
+            "name": "M1 Medium Warm",
+            "depth": "medium",
+            "undertone": "warm",
+            "hex": "#c09170"
+          },
+          {
+            "name": "M2 Medium Neutral",
+            "depth": "medium",
+            "undertone": "neutral",
+            "hex": "#bb8f78"
+          },
+          {
+            "name": "M3 Medium Cool",
+            "depth": "medium",
+            "undertone": "cool",
+            "hex": "#b98c80"
+          },
+          {
+            "name": "T1 Tan Warm",
+            "depth": "tan",
+            "undertone": "warm",
+            "hex": "#a06e4c"
+          },
+          {
+            "name": "T2 Tan Neutral",
+            "depth": "tan",
+            "undertone": "neutral",
+            "hex": "#9c6c55"
+          },
+          {
+            "name": "T3 Tan Cool",
+            "depth": "tan",
+            "undertone": "cool",
+            "hex": "#996a5e"
+          },
+          {
+            "name": "D1 Deep Warm",
+            "depth": "deep",
+            "undertone": "warm",
+            "hex": "#6e4630"
+          },
+          {
+            "name": "D2 Deep Neutral",
+            "depth": "deep",
+            "undertone": "neutral",
+            "hex": "#6a4536"
+          },
+          {
+            "name": "D3 Deep Cool",
+            "depth": "deep",
+            "undertone": "cool",
+            "hex": "#67443c"
+          },
+          {
+            "name": "L4 Light Olive",
+            "depth": "light",
+            "undertone": "olive",
+            "hex": "#c9ab82"
+          },
+          {
+            "name": "M4 Medium Olive",
+            "depth": "medium",
+            "undertone": "olive",
+            "hex": "#ad8f66"
+          }
+        ]
+      }
+    },
+    {
+      "id": "tt-03",
+      "name": "Velvet Matte Tint SPF 50",
+      "brand": "Saltmint",
+      "role": "sunscreen",
+      "leave_on": true,
+      "price_inr": 899,
+      "inci": [
+        "Aqua",
+        "Zinc Oxide",
+        "Silica",
+        "Dimethicone",
+        "Iron Oxides",
+        "Phenoxyethanol"
+      ],
+      "inci_complete": true,
+      "aimed_at": [
+        "oiliness"
+      ],
+      "source": "Fictional product for the basket demo",
+      "shop": {
+        "job": "base",
+        "suits": [
+          "oily",
+          "combination",
+          "normal"
+        ],
+        "texture": "fluid",
+        "finish": "matte",
+        "tinted": true,
+        "shades": [
+          {
+            "name": "F1 Fair Warm",
+            "depth": "fair",
+            "undertone": "warm",
+            "hex": "#ecc8a8"
+          },
+          {
+            "name": "F2 Fair Neutral",
+            "depth": "fair",
+            "undertone": "neutral",
+            "hex": "#ebc6b0"
+          },
+          {
+            "name": "F3 Fair Cool",
+            "depth": "fair",
+            "undertone": "cool",
+            "hex": "#ecc4b8"
+          },
+          {
+            "name": "L1 Light Warm",
+            "depth": "light",
+            "undertone": "warm",
+            "hex": "#d9b08c"
+          },
+          {
+            "name": "L2 Light Neutral",
+            "depth": "light",
+            "undertone": "neutral",
+            "hex": "#d6ad94"
+          },
+          {
+            "name": "L3 Light Cool",
+            "depth": "light",
+            "undertone": "cool",
+            "hex": "#d5aa9c"
+          },
+          {
+            "name": "M1 Medium Warm",
+            "depth": "medium",
+            "undertone": "warm",
+            "hex": "#c09170"
+          },
+          {
+            "name": "M2 Medium Neutral",
+            "depth": "medium",
+            "undertone": "neutral",
+            "hex": "#bb8f78"
+          },
+          {
+            "name": "M3 Medium Cool",
+            "depth": "medium",
+            "undertone": "cool",
+            "hex": "#b98c80"
+          },
+          {
+            "name": "T1 Tan Warm",
+            "depth": "tan",
+            "undertone": "warm",
+            "hex": "#a06e4c"
+          },
+          {
+            "name": "T2 Tan Neutral",
+            "depth": "tan",
+            "undertone": "neutral",
+            "hex": "#9c6c55"
+          },
+          {
+            "name": "T3 Tan Cool",
+            "depth": "tan",
+            "undertone": "cool",
+            "hex": "#996a5e"
+          },
+          {
+            "name": "D1 Deep Warm",
+            "depth": "deep",
+            "undertone": "warm",
+            "hex": "#6e4630"
+          },
+          {
+            "name": "D2 Deep Neutral",
+            "depth": "deep",
+            "undertone": "neutral",
+            "hex": "#6a4536"
+          },
+          {
+            "name": "D3 Deep Cool",
+            "depth": "deep",
+            "undertone": "cool",
+            "hex": "#67443c"
+          },
+          {
+            "name": "L4 Light Olive",
+            "depth": "light",
+            "undertone": "olive",
+            "hex": "#c9ab82"
+          },
+          {
+            "name": "M4 Medium Olive",
+            "depth": "medium",
+            "undertone": "olive",
+            "hex": "#ad8f66"
+          }
+        ]
+      }
+    },
+    {
+      "id": "tt-04",
+      "name": "Satin Veil Tint SPF 30",
+      "brand": "Nimbus Skin",
+      "role": "sunscreen",
+      "leave_on": true,
+      "price_inr": 799,
+      "inci": [
+        "Aqua",
+        "Zinc Oxide",
+        "Glycerin",
+        "Caprylic/Capric Triglyceride",
+        "Iron Oxides",
+        "Phenoxyethanol"
+      ],
+      "inci_complete": true,
+      "aimed_at": [
+        "radiance"
+      ],
+      "source": "Fictional product for the basket demo",
+      "shop": {
+        "job": "base",
+        "suits": [
+          "oily",
+          "combination",
+          "normal",
+          "dry"
+        ],
+        "texture": "fluid",
+        "finish": "natural",
+        "tinted": true,
+        "shades": [
+          {
+            "name": "F3 Fair Cool",
+            "depth": "fair",
+            "undertone": "cool",
+            "hex": "#ecc4b8"
+          },
+          {
+            "name": "F2 Fair Neutral",
+            "depth": "fair",
+            "undertone": "neutral",
+            "hex": "#ebc6b0"
+          },
+          {
+            "name": "L3 Light Cool",
+            "depth": "light",
+            "undertone": "cool",
+            "hex": "#d5aa9c"
+          },
+          {
+            "name": "L2 Light Neutral",
+            "depth": "light",
+            "undertone": "neutral",
+            "hex": "#d6ad94"
+          }
+        ]
+      }
+    }
+  ],
+  "basket_note": "Each product's `shop` block is the shop's own tagging, used only by the basket (app/basket.py): job, the skin types it is made for (suits), texture, finish, and for tinted products the shade range with each shade's depth and undertone family. Every brand, product, price and shade is invented."
+}

@@ -19,6 +19,7 @@ A field with neither stays None and the gate reports it as "not recorded".
 """
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import asdict, dataclass
 from datetime import datetime
@@ -49,6 +50,9 @@ class Fingerprint:
     original_height: int | None = None
     face_ratio_live: float | None = None     # the browser's own live estimate, for reference only
     normalisation: dict | None = None        # method, target, crop box, scale (facecrop.normalise info)
+    # The EV the camera metered the scene at, normalised to ISO 100, from EXIF ExposureTime,
+    # FNumber and ISO. None when any of those is absent, which never counts as a match.
+    exposure_ev: float | None = None
     # "camera" | "upload": shown as a badge only. The comparability gate never reads it.
     capture_source: str | None = None
 
@@ -90,6 +94,61 @@ def _exif(img: Image.Image) -> tuple[str | None, int | None]:
     return clean_device_label(device), hour
 
 
+# ---------------------------------------------------------------- exposure
+# EXIF exposure tags, read by number like the ones above. No other tag is touched.
+_TAG_EXPOSURE_TIME = 0x829A
+_TAG_FNUMBER = 0x829D
+_TAG_ISO = 0x8827
+_TAG_PHOTOGRAPHIC_SENSITIVITY = 0x8833
+_IFD_EXIF = 0x8769
+
+
+def _num(v) -> float | None:
+    """A float from an EXIF value, which may be a Rational, a tuple or a string."""
+    if v is None or isinstance(v, (bytes, bytearray)):
+        return None
+    if isinstance(v, (list, tuple)):
+        v = v[0] if v else None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return f if f > 0 and f == f and f not in (float("inf"), float("-inf")) else None
+
+
+def exposure_ev(img: Image.Image) -> float | None:
+    """How much light the camera decided the scene had, from its own settings.
+
+    This is the EV the camera metered the scene at, normalised to ISO 100:
+
+        EV = log2(FNumber^2 / ExposureTime) - log2(ISO / 100)
+
+    A brighter scene makes the camera pick a shorter exposure, a smaller aperture or a lower ISO,
+    which all push EV up. That makes it an independent read on the light, measured by the camera at
+    the moment of capture, rather than inferred from the pixels afterwards. It is useful precisely
+    where pixel brightness is not: auto-exposure hides a lighting change by brightening a dim room,
+    so two photos can match on luminance while the light they were taken in did not.
+
+    Returns None when any of the three tags is missing, which is the normal case for a photo taken
+    in the browser (a canvas JPEG carries no EXIF). None is never treated as a match.
+    """
+    try:
+        raw = img.getexif()
+        sub = raw.get_ifd(_IFD_EXIF)
+    except Exception:  # noqa: BLE001 - a broken or absent EXIF block is the same as none
+        return None
+    t = _num(sub.get(_TAG_EXPOSURE_TIME))
+    n = _num(sub.get(_TAG_FNUMBER))
+    iso = _num(sub.get(_TAG_ISO)) or _num(sub.get(_TAG_PHOTOGRAPHIC_SENSITIVITY))
+    if t is None or n is None or iso is None:
+        return None
+    try:
+        ev = math.log2((n * n) / t) - math.log2(iso / 100.0)
+    except (ValueError, ZeroDivisionError):
+        return None
+    return round(ev, 3)
+
+
 _CTRL = re.compile(r"[\x00-\x1f\x7f]+")
 MAX_DEVICE_LABEL = 80
 
@@ -111,9 +170,12 @@ def measure(image_path: str | Path, face_ratio: float | None = None, yaw: float 
     if exif_path is not None:
         with Image.open(exif_path) as src:
             device, hour = _exif(src)
+            # Exposure always comes from the ORIGINAL photo: the normalised copy carries no EXIF.
+            ev = exposure_ev(src)
     with Image.open(image_path) as im:
         if exif_path is None:
             device, hour = _exif(im)
+            ev = exposure_ev(im)
         device_src = "exif" if device else None
         hour_src = "exif" if hour is not None else None
         if device is None and clean_device_label(client_device):
@@ -129,8 +191,10 @@ def measure(image_path: str | Path, face_ratio: float | None = None, yaw: float 
         r, g, b = ImageStat.Stat(crop).mean
         luma = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0
         rb = r / b if b > 0 else 99.0
-    return Fingerprint(w, h, round(luma, 4), round(rb, 4), device, hour, face_ratio, yaw, pitch, roll,
-                       device_src, hour_src)
+    fp = Fingerprint(w, h, round(luma, 4), round(rb, 4), device, hour, face_ratio, yaw, pitch, roll,
+                     device_src, hour_src)
+    fp.exposure_ev = ev
+    return fp
 
 
 def measure_normalised(norm_path: str | Path, original_path: str | Path, info: dict,

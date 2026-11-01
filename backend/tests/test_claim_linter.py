@@ -35,6 +35,66 @@ def test_linter_catches(text, rule):
     assert rule in {f.rule for f in findings}
 
 
+# The words added for the three moments (docs/STRATEGY.md section 4, rule 9).
+@pytest.mark.parametrize("text,rule", [
+    ("This causes breakouts", "cause"), ("Redness caused by the toner", "cause"),
+    ("You have an allergy to linalool", "allergy"), ("You're allergic to this", "allergy"),
+    ("This product is safe for you", "safe"), ("Safe to use daily", "safe"),
+    ("Honestly, it works", "works"), ("This worked for her", "works"),
+    ("It will work on your skin", "works"), ("The serum works", "works"),
+    ("Works for you", "works"), ("It does work", "works"),
+    ("Proven to help", "prove"), ("It treats acne", "treat"), ("Cures dryness", "cure"),
+    ("We diagnose your skin type", "diagnose"),
+    ("This fixes your skin", "fixes"), ("It fixed my acne", "fixes"),
+    ("Will fix it in two weeks", "fixes"), ("Fixes pores", "fixes"),
+])
+def test_linter_catches_the_added_words(text, rule):
+    findings, _ = CL.lint([("frontend/src/x.ts", [(1, text)])])
+    assert rule in {f.rule for f in findings}, f"{text!r} should trip [{rule}]"
+
+
+@pytest.mark.parametrize("text", [
+    # "Fix" as the retake instruction, and "fixed" as the trial design, are not claims.
+    "fixes: string[];", "The fixes are listed below.", "Holding fixed",
+    "Everything else is held fixed, and 3 scans set her own range.",
+    "fixed, tested rules decide what the numbers mean",
+    "Scans will be refused until you fix or clear it.",
+    # "Works best" is advice about a photo; "worked out" is what the engine did.
+    "The spot where you took them works best.", "The original photo works best.",
+    "every verdict is worked out by the same engine as a real trial",
+    # The user's own question is one of the three moments, not an answer we give.
+    "Is my product working?", "Is it working? See what your scans can and can't say",
+    # Different words.
+    "unsafe", "safety", "safely", "Not for safekeeping",
+])
+def test_linter_leaves_the_non_claim_uses_alone(text):
+    findings, _ = CL.lint([("frontend/src/x.ts", [(1, text)])])
+    assert findings == [], f"{text!r} is not a claim: {findings}"
+
+
+def test_the_added_rules_are_all_registered():
+    for rule in ("allergy", "safe", "works", "fixes"):
+        assert rule in {name for name, _ in CL.RULES}
+
+
+@pytest.mark.parametrize("text", [
+    # Nothing the new engines say may trip the linter.
+    "No conflicts with your history", "Repeats a pattern", "Patch-test first", "Blocked",
+    "Ingredient list incomplete → unknown",
+    "Aimed at pores. Pores is your 2nd lowest YouCam score of the 3 we measured.",
+    "“Aimed at” is what the product is for. It is not a reading of what it will do to your skin.",
+    "No scan yet: scan to see if this is aimed at your skin's top concerns.",
+    "One product can't tell us which of its 6 ingredients did it.",
+    "Not a purge. It lists no ingredient that speeds up cell turnover.",
+    "Consistent with purging rather than a breakout.",
+    "You said it suited you, but that is 2 weeks of use.",
+    "Too early to say", "Suited me", "Not sure", "Broke me out",
+])
+def test_the_new_engine_wording_passes_the_linter(text):
+    findings, _ = CL.lint([("frontend/src/x.ts", [(1, text)])])
+    assert findings == [], f"{text!r}: {findings}"
+
+
 @pytest.mark.parametrize("text", [
     "Decision support, not diagnosis.", "Treatment step", "because the light changed",
     "Niacinamide 10%", "Changed beyond your normal range during this trial.", "derm//os",
@@ -73,3 +133,33 @@ def test_not_diagnosis_wording():
 def test_no_real_brand_or_retailer_names():
     hits = CL.brand_hits()
     assert hits == [], "\n".join(map(str, hits))
+
+
+# ---- Strategy v2: the shopping flow never shows a score and never says "can't tell".
+@pytest.mark.parametrize("text,rule", [
+    ("Your oiliness score is 48", "score shown"), ("You earned 12 points", "score shown"),
+    ("Skin health 72/100", "score shown"), ("We can't tell yet", "can't tell"),
+    ("We cannot tell from this photo", "can't tell"), ("Can’t tell", "can't tell"),
+])
+@pytest.mark.parametrize("file", sorted(CL.SHOPPING_FILES))
+def test_shopping_flow_rules(file, text, rule):
+    findings, _ = CL.lint([(file, [(1, text)])])
+    assert rule in {f.rule for f in findings}, f"{text!r} in {file} should trip [{rule}]"
+
+
+@pytest.mark.parametrize("text", ["raw_score", "Your T-zone reads oily", "from your answers",
+                                  "Preview appears on a live scan"])
+def test_shopping_flow_rules_leave_plain_words_alone(text):
+    findings, _ = CL.lint([("frontend/src/screens/Basket.tsx", [(1, text)])])
+    assert findings == []
+
+
+def test_shopping_rules_are_scoped_to_the_basket_flow():
+    # The optional check-in keeps its own measured wording, including its "can't tell yet" verdict.
+    findings, _ = CL.lint([("frontend/src/screens/Results.tsx", [(1, "We can't tell yet")])])
+    assert findings == []
+
+
+def test_every_shopping_file_exists():
+    for f in CL.SHOPPING_FILES:
+        assert (ROOT / f).is_file(), f

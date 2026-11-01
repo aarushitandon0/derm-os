@@ -16,8 +16,44 @@ export interface GuideStep {
 
 export const GUIDE_STEPS: GuideStep[] = [
   {
+    scene: "riya-store",
+    title: "What her skin has already told her",
+    look: "Two products that itched, one that broke her out, two that suited her. The engine reads one suspect out of that: alcohol denat., in 2 of 2 that itched and 0 of 2 that suited her.",
+    to: () => "/history",
+  },
+  {
+    scene: "riya-store",
+    title: "Moment 1: the sale",
+    look: "Three products, three different answers. Tap “Check against my skin” on each.",
+    to: () => "/store",
+  },
+  {
+    scene: "riya-store",
+    title: "Repeats a pattern",
+    look: "The vitamin C on sale lists her suspect by name, with the counts from her own records. One next step, and “change nothing” is still offered.",
+    to: () => "/store/sr-08",
+  },
+  {
+    scene: "riya-store",
+    title: "Unknown, never a pass",
+    look: "The bundle's ingredient list is incomplete, so it reads “Ingredient list incomplete → unknown”. An ingredient that isn't printed stays unknown, and unknown is never a pass.",
+    to: () => "/store/mo-07",
+  },
+  {
+    scene: "riya-store",
+    title: "No conflicts, and aimed at her pores",
+    look: "Nothing of hers matched. The skin source says what it is aimed at, against her measured scores, in the words “aimed at”.",
+    to: () => "/store/sr-09",
+  },
+  {
+    scene: "riya-breakout",
+    title: "Moment 2: she breaks out",
+    look: "Closed comedones on the cheeks, not her usual spots. The sunscreen started 4 weeks ago is the lead; the snail mucin she has used 12 weeks ranks lowest, with the reason shown. Not a purge: no turnover ingredient.",
+    to: () => "/breakout",
+  },
+  {
     scene: "riya-history",
-    title: "Riya's history",
+    title: "Her history, the three record types",
     look: "Her reaction to a fragranced moisturiser is filed against that product only. Avoiding fragrance is her separate choice.",
     to: () => "/history",
   },
@@ -62,6 +98,24 @@ export const GUIDE_STEPS: GuideStep[] = [
     title: "Another trial: Meera",
     look: "Her comparable check-ins leave her own range. The strongest wording is still “during this trial”.",
     to: (t) => `/results/${t}`,
+  },
+  {
+    scene: "meera-pore",
+    title: "Moment 3: a result that does say something",
+    look: "Her pores moved 6 raw points past her own range, on comparable photos. Read the grey line a typical app would lead with, then the derm//os verdict in bold under it.",
+    to: (t) => `/results/${t}`,
+  },
+  {
+    scene: "meera-pore",
+    title: "The loop closes",
+    look: "The verdict is written into that product's record, so the next purchase check knows it. A result that can't tell either way is written as “not sure”, never as suiting you.",
+    to: () => "/history",
+  },
+  {
+    scene: "beginner",
+    title: "Start here, from nothing",
+    look: "No shelf, no history, no scan. Four questions, then a skin type labelled “from your answers” and a 3-step starter put through the same check as any purchase.",
+    to: () => "/start-here",
   },
 ];
 

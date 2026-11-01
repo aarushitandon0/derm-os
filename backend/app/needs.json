@@ -1,0 +1,43 @@
+{
+  "version": "needs-1.0",
+  "note": "Curated, versioned data. Zone skin types and measured concerns become plain-language needs, and each need names the ingredients and textures it is aimed at. Ingredient keys are canonical (app/inci.py). Nothing here is a claim about what a product will do: a need is what a product is aimed at, and the basket only ever says 'aimed at'.",
+  "sources": [
+    {"id": "cosing", "text": "EU CosIng database: the declared cosmetic functions of each INCI name (humectant, skin conditioning, antiseborrhoeic).", "url": "https://ec.europa.eu/growth/tools-databases/cosing/"},
+    {"id": "fda-acne", "text": "US FDA OTC acne drug monograph, 21 CFR 333 Subpart D: salicylic acid 0.5-2% and benzoyl peroxide 2.5-10% are the listed OTC acne ingredients.", "url": "https://www.ecfr.gov/current/title-21/chapter-I/subchapter-D/part-333/subpart-D"},
+    {"id": "youcam-zones", "text": "YouCam AI Skin Analysis: skin_type reports whole, t_zone and u_zone subcategories, each one of Normal, Oily, Dry, Combination, optionally with Redness.", "url": "https://docs.perfectcorp.com/reference/ai_skin_analysis"},
+    {"id": "texture-rule", "text": "derm//os house rule: a gel or fluid where a zone reads oily, a cream where it reads dry, a lotion where it reads normal. Finish goal then reorders within that.", "url": null}
+  ],
+  "zones": {
+    "t_zone": {"name": "T-zone", "where": "forehead, nose and chin"},
+    "u_zone": {"name": "Cheeks", "where": "cheeks and jawline"}
+  },
+  "zone_type_words": {
+    "oily": "oily", "dry": "dry", "normal": "normal", "combination": "combination"
+  },
+  "zone_needs": {
+    "oily": {"key": "oil_control", "words": "oil control", "targets": ["niacinamide", "salicylic acid", "zinc pca"], "textures": ["gel", "fluid", "foam", "lotion"], "source": "cosing"},
+    "dry": {"key": "hydration", "words": "hydration", "targets": ["glycerin", "sodium hyaluronate", "ceramide np", "squalane", "panthenol"], "textures": ["cream", "balm", "lotion"], "source": "cosing"},
+    "normal": {"key": "balance", "words": "light moisture", "targets": ["glycerin", "sodium hyaluronate"], "textures": ["lotion", "gel", "cream"], "source": "cosing"},
+    "redness": {"key": "calm", "words": "calming, fragrance-free", "targets": ["centella asiatica extract", "panthenol", "allantoin"], "avoid": ["fragrance"], "textures": [], "source": "cosing"}
+  },
+  "concern_threshold": 60,
+  "concern_threshold_note": "YouCam raw_score is higher for healthier-looking skin. A concern below 60 counts as a need; the lowest come first. Raw scores are used only here and are never shown.",
+  "concern_needs": {
+    "oiliness": {"key": "oil_control", "words": "oil control", "zone": "t_zone", "targets": ["niacinamide", "zinc pca", "salicylic acid"], "source": "cosing"},
+    "pore": {"key": "pores", "words": "less visible pores", "zone": "t_zone", "targets": ["niacinamide", "salicylic acid"], "source": "cosing"},
+    "moisture": {"key": "hydration", "words": "hydration", "zone": "u_zone", "targets": ["glycerin", "sodium hyaluronate", "ceramide np", "squalane"], "source": "cosing"},
+    "radiance": {"key": "glow", "words": "more glow", "zone": "whole", "targets": ["niacinamide", "sodium ascorbyl phosphate", "ascorbyl glucoside", "3-o-ethyl ascorbic acid"], "not_if_suspect": ["vitamin c"], "source": "cosing"},
+    "acne": {"key": "breakouts", "words": "fewer clogged pores", "zone": "whole", "targets": ["salicylic acid", "benzoyl peroxide"], "see_doctor": "See a dermatologist if spots are painful, deep or keep coming back.", "source": "fda-acne"},
+    "redness": {"key": "calm", "words": "calming, fragrance-free", "zone": "u_zone", "targets": ["centella asiatica extract", "panthenol", "allantoin"], "avoid": ["fragrance"], "source": "cosing"},
+    "texture": {"key": "smoothness", "words": "a smoother-looking surface", "zone": "whole", "targets": ["glycerin", "niacinamide", "lactic acid"], "source": "cosing"}
+  },
+  "finishes": {
+    "dewy": {"words": "glowy / dewy", "prefer": ["dewy", "natural"], "clash": ["matte"], "line": "humectant-rich, with a glow finish"},
+    "natural": {"words": "natural", "prefer": ["natural", "dewy", "matte"], "clash": [], "line": "a satin finish, neither shiny nor flat"},
+    "matte": {"words": "matte", "prefer": ["matte", "natural"], "clash": ["dewy"], "line": "oil-control, with a mattifying finish"}
+  },
+  "default_finish": "natural",
+  "answers_types": {
+    "tight": "dry", "comfortable": "normal", "shiny_tzone": "combination", "shiny_all": "oily"
+  }
+}

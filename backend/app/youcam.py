@@ -1,4 +1,8 @@
-"""YouCam Skin Analysis client.
+"""YouCam client: Skin Analysis, plus Skin Tone (AI Facial Color Tones Analyzer) and Makeup VTO.
+
+Skin Tone and Makeup VTO use the same pattern on the v2.0 task endpoints:
+POST /s2s/v2.0/task/{skin-tone-analysis|makeup-vto}, then GET .../{task_id}; see run_feature().
+The skin analysis flow below is unchanged:
 
 Flow (from docs.perfectcorp.com/reference/ai_skin_analysis):
   1. POST /s2s/v2.0/file            -> file_id + presigned PUT url/headers
@@ -315,6 +319,167 @@ class YouCamClient:
         task_id = self.create_task(file_id, actions)
         body = self.poll(task_id)
         return normalize(body, mode, actions, task_id)
+
+    # -- skin tone and makeup try-on (v2.0 task endpoints) ---------------------
+    def feature_cost(self, feature: str) -> tuple[float, str]:
+        """Units one task of `feature` costs ("skin-tone-analysis", "makeup-vto"), read from the
+        free price list by its run_task_url, or the built-in table when the list can't be read."""
+        if getattr(self, "_skus", None) is None:
+            try:
+                self._skus = self.feature_costs()
+            except Exception as e:  # noqa: BLE001 - fall back to the built-in price table
+                log.warning("Feature-cost list unavailable (%s); using the built-in price table.", type(e).__name__)
+                self._skus = []
+        return feature_cost_from(self._skus, feature)
+
+    def run_feature(self, feature: str, body: dict[str, Any], max_wait: float = 120.0) -> tuple[str, dict[str, Any]]:
+        """POST /s2s/v2.0/task/{feature}, then poll GET .../{task_id} until success or error."""
+        if feature not in FEATURES:
+            raise ValueError(f"Unknown feature {feature!r}")
+        path = f"/s2s/{FEATURE_VERSION}/task/{feature}"
+        created = self._request("POST", path, json=body)
+        task_id = (created.get("data") or {}).get("task_id")
+        if not task_id:
+            raise YouCamError(f"{feature}: no task_id in the response", code="no_task_id")
+        return task_id, self._poll_path(f"{path}/{task_id}", max_wait)
+
+    def _poll_path(self, path: str, max_wait: float) -> dict[str, Any]:
+        start, delay = time.time(), 1.5
+        while time.time() - start < max_wait:
+            body = self._request("GET", path)
+            data = body.get("data") or {}
+            status = data.get("task_status")
+            if status == "success":
+                return body
+            if status == "error":
+                err = data.get("error") or data.get("error_code") or body.get("error")
+                raise YouCamError(f"Task failed: {err}", code=str(err), friendly=IMAGE_ERRORS.get(str(err)))
+            self.poll_sleep(delay)
+            delay = min(delay * 1.4, 6)
+        raise YouCamError(f"Task at {path} did not finish in {max_wait}s", code="timeout")
+
+    def skin_tone(self, image_path: str | Path | None = None, file_id: str | None = None,
+                  strictness: str = "high") -> "ToneResult":
+        """AI Facial Color Tones Analyzer. Returns the measured colours; the API returns no
+        undertone (app/undertone.py derives one from skin_color)."""
+        fid = file_id or self.upload(image_path)
+        task_id, body = self.run_feature(SKIN_TONE, {"src_file_id": fid, "face_angle_strictness_level": strictness})
+        return normalize_tone(body, task_id)
+
+    def makeup_vto(self, effects: list[dict[str, Any]], image_path: str | Path | None = None,
+                   file_id: str | None = None) -> "VtoResult":
+        """AI Makeup Virtual Try-On with the given effects (e.g. one foundation palette)."""
+        fid = file_id or self.upload(image_path)
+        task_id, body = self.run_feature(MAKEUP_VTO, {"src_file_id": fid, "version": "1.0", "effects": effects})
+        return VtoResult(task_id, extract_image_url(body), body)
+
+
+# ---------------------------------------------------------------- tone + try-on results
+SKIN_TONE = "skin-tone-analysis"
+MAKEUP_VTO = "makeup-vto"
+FEATURES = (SKIN_TONE, MAKEUP_VTO)
+FEATURE_VERSION = "v2.0"
+# From GET /s2s/v2.0/credit/feature-cost (read 2026-11-01): "AI Facial Color Tones Analyzer V1.0"
+# 20 units and "AI Makeup Virtual Try-On V1.0" 1 unit, per result image. Fallback only.
+FEATURE_PRICE_FALLBACK = {SKIN_TONE: 20.0, MAKEUP_VTO: 1.0}
+
+
+def feature_cost_from(skus: list[dict[str, Any]], feature: str) -> tuple[float, str]:
+    for sku in skus or []:
+        url = str(sku.get("run_task_url") or "")
+        amt = _num(sku.get("amount"))
+        if amt is not None and url.rstrip("/").endswith(f"/task/{feature}"):
+            return amt, "price list"
+    if feature in FEATURE_PRICE_FALLBACK:
+        return FEATURE_PRICE_FALLBACK[feature], "built-in"
+    raise ValueError(f"No price for feature {feature!r}")
+
+
+@dataclass
+class ToneResult:
+    task_id: str | None
+    skin_color: str | None
+    colors: dict[str, Any]
+    face_quality: dict[str, Any]
+    raw: dict[str, Any] | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"task_id": self.task_id, "skin_color": self.skin_color, "colors": dict(self.colors),
+                "face_quality": dict(self.face_quality)}
+
+
+def normalize_tone(payload: dict[str, Any], task_id: str | None = None) -> ToneResult:
+    """data.results.color.skin_color (documented example), tolerant of a missing envelope."""
+    data = payload.get("data", payload) if isinstance(payload, dict) else {}
+    results = data.get("results", data) if isinstance(data, dict) else {}
+    results = results if isinstance(results, dict) else {}
+    color = results.get("color") if isinstance(results.get("color"), dict) else {}
+    fq = results.get("face_quality") if isinstance(results.get("face_quality"), dict) else {}
+    sc = color.get("skin_color")
+    return ToneResult(task_id, sc if isinstance(sc, str) else None, dict(color), dict(fq), raw=payload)
+
+
+@dataclass
+class VtoResult:
+    task_id: str | None
+    image_url: str | None
+    raw: dict[str, Any] | None = None
+
+
+def extract_image_url(payload: Any) -> str | None:
+    """The rendered image's URL. Accepts data.results as a string, a dict with url / download_url /
+    image_url / dst_url, a list of such dicts, or one nested under `output`."""
+    node = payload.get("data", payload) if isinstance(payload, dict) else payload
+    node = node.get("results", node) if isinstance(node, dict) else node
+
+    def find(n: Any) -> str | None:
+        if isinstance(n, str) and n.startswith(("https://", "http://")):
+            return n
+        if isinstance(n, list):
+            for item in n:
+                hit = find(item)
+                if hit:
+                    return hit
+        if isinstance(n, dict):
+            for k in ("url", "download_url", "image_url", "dst_url"):
+                if isinstance(n.get(k), str) and n[k].startswith(("https://", "http://")):
+                    return n[k]
+            for k in ("output", "outputs", "results", "images"):
+                if k in n:
+                    hit = find(n[k])
+                    if hit:
+                        return hit
+        return None
+
+    return find(node)
+
+
+def download_render(url: str | None, dest: str | Path, http: httpx.Client | None = None) -> Path | None:
+    """Save a try-on render now (result URLs expire), re-encoded from pixels only. Never raises:
+    a failed download is logged without its URL and returns None."""
+    if not url or not url.startswith(("https://", "http://")):
+        return None
+    own = http is None
+    http = http or httpx.Client(timeout=30)
+    try:
+        r = http.get(url)
+        if r.status_code != 200 or len(r.content) > MAX_MASK_BYTES:
+            log.warning("Try-on render not saved (status %s).", r.status_code)
+            return None
+        clean = photometa.clean_bytes(r.content)
+        if clean is None:
+            log.warning("Try-on render not saved (not a readable image).")
+            return None
+        out = Path(dest).with_suffix(clean[1])
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(clean[0])
+        return out
+    except httpx.HTTPError as e:
+        log.warning("Try-on render download failed (%s).", type(e).__name__)
+        return None
+    finally:
+        if own:
+            http.close()
 
 
 def delete_task_quietly(client: Any, task_id: str | None) -> bool:

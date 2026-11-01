@@ -31,7 +31,351 @@ export interface Product {
   price_inr: number;
   inci: string[];
   inci_complete: boolean;
+  /** What the product's own claims are aimed at, in YouCam concern names. Never a measured effect. */
+  aimed_at?: string[];
   source: string;
+}
+
+// ---------------------------------------------------------------- outcomes (what happened)
+export type OutcomeValue = "suited" | "irritation" | "breakout" | "not_sure";
+/** What an outcome reads as once the >= 4 week rule is applied (backend app/outcomes.py). */
+export type EffectiveOutcome = OutcomeValue | "too_early";
+export type FaceZone = "forehead" | "nose" | "cheeks" | "chin" | "jaw";
+
+export interface ProductOutcome {
+  id: string;
+  product_id: string;
+  outcome: OutcomeValue;
+  leave_on: boolean;
+  started_on: string | null;
+  stopped_on: string | null;
+  weeks_used_given: number | null;
+  zones: FaceZone[];
+  usual_spots: boolean | null;
+  settled_while_using: boolean | null;
+  settled_week: number | null;
+  note: string;
+  source: "user" | "writeback";
+  trial_id: string | null;
+  rule_version: string;
+  // Derived by the backend, never recomputed here.
+  weeks_used: number | null;
+  effective_outcome: EffectiveOutcome;
+  label: string;
+  plain_line: string;
+  counts_as_suited: boolean;
+}
+
+export interface OutcomeIn {
+  product_id: string;
+  outcome: OutcomeValue;
+  started_on?: string | null;
+  stopped_on?: string | null;
+  weeks_used_given?: number | null;
+  zones?: FaceZone[];
+  usual_spots?: boolean | null;
+  settled_while_using?: boolean | null;
+  settled_week?: number | null;
+  note?: string;
+}
+
+// ---------------------------------------------------------------- patterns
+export type PatternTier = "suspect" | "lead" | "cleared_so_far";
+
+export interface Appearance {
+  product_id: string;
+  product_name: string;
+  label_line: string;
+  inci_position: number;
+  inci_length: number;
+  leave_on: boolean;
+  weight: number;
+  weight_label: string | null;
+}
+
+export interface Suspect {
+  ingredient: string;
+  display: string;
+  tier: PatternTier;
+  tier_label: string;
+  match_type: "exact" | "family";
+  family: string | null;
+  family_label: string | null;
+  /** "personal" (your own records) or "general" (general knowledge). Kept apart on purpose. */
+  evidence: string;
+  general_note: string | null;
+  in_failed: Appearance[];
+  in_suited: Appearance[];
+  failed_count: number;
+  failed_total: number;
+  suited_count: number;
+  suited_total: number;
+  failed_weight: number;
+  counts_line: string;
+}
+
+export interface PurgeOffer {
+  product_id: string;
+  product_name: string;
+  ingredient: string;
+  label_line: string;
+  strength: "can" | "mild";
+  settled_week: number | null;
+  question: string;
+  note: string;
+}
+
+export interface PatternReport {
+  kind: "irritation" | "breakout";
+  headline: string;
+  suspects: Suspect[];
+  failed_products: (ProductOutcome & { product_name: string; inci_length: number | null })[];
+  suited_products: (ProductOutcome & { product_name: string; inci_length: number | null })[];
+  cannot_narrow: string | null;
+  only_in_failed: { ingredient: string; display: string; match_type: string; inci_position: number }[];
+  incomplete_products: { product_id: string; product_name: string; listed: number; note: string }[];
+  unknown_note: string | null;
+  purge_offers: PurgeOffer[];
+  rule_version: string;
+  families_version: string;
+}
+
+export interface Patterns {
+  irritation: PatternReport;
+  breakout: PatternReport;
+  rule_version: string;
+  families_version: string;
+}
+
+// ---------------------------------------------------------------- cart check (before you buy)
+export type CartRung = "blocked" | "repeats_a_pattern" | "patch_test_first" | "no_conflicts";
+
+export interface CartSource {
+  key: "history" | "skin" | "shelf";
+  label: string;
+  lines: string[];
+  detail: Record<string, any>;
+}
+
+export interface CartCheck {
+  product_id: string;
+  rung: CartRung;
+  rung_label: string;
+  /** What the screen prints. Reads "Ingredient list incomplete -> unknown" when `unknown`. */
+  verdict_line: string;
+  tags: string[];
+  unknown: boolean;
+  sources: CartSource[];
+  next_step: string;
+  change_nothing: string;
+  inputs: Record<string, any>;
+  rule_version: string;
+}
+
+// ---------------------------------------------------------------- the basket (shop by your face)
+export interface BasketQuestion {
+  id: "finish" | "history" | "budget";
+  text: string;
+  why: string;
+  skippable?: boolean;
+  choices: { value: string; label: string }[];
+}
+export interface BasketQuestions {
+  questions: BasketQuestion[];
+  on_record: { records: number; outcomes: number; bothered: number };
+  rule_version: string;
+}
+export interface ZoneRead {
+  zone: "t_zone" | "u_zone";
+  name: string;
+  type: "oily" | "dry" | "normal";
+  redness: boolean;
+  source: "face" | "answers";
+  label: string;
+  line: string;
+}
+export interface Shade {
+  name: string;
+  depth: string;
+  undertone: string;
+  hex: string;
+}
+export interface FaceMapData {
+  zones: ZoneRead[];
+  same_type: boolean;
+  needs: { key: string; line: string; zone: string; label: string }[];
+  needs_line: string;
+  see_doctor: string | null;
+  undertone: { tone: string; depth: string; source: "face" | "answers" | "default"; label: string; line: string; note: string; skin_color: string | null };
+  source: "face" | "answers";
+  label: string;
+  demo: boolean;
+}
+export interface BasketWhy {
+  key: "face" | "history" | "finish" | "shelf";
+  label: string;
+  line: string;
+}
+export interface BasketJob {
+  job: "cleanser" | "moisturiser" | "base";
+  zone: "whole" | "t_zone" | "u_zone";
+  title: string;
+  status: "pick" | "owned" | "none";
+  how_to_use: string;
+  pick: { product: Product; price_inr: number; shade: Shade | null; finish?: string; texture?: string } | null;
+  why: BasketWhy[];
+  also_fits: { product_id: string; name: string; brand: string; price_inr: number; patch_test_first: boolean }[];
+  note: string | null;
+}
+export interface BasketSkip {
+  product_id: string;
+  name: string;
+  brand: string;
+  job: string;
+  kind: "history" | "unknown" | "finish" | "shade" | "zone" | "budget";
+  label: string;
+  reason: string;
+}
+export interface TryOn {
+  status: "ready" | "pending_live" | "no_shade";
+  line: string | null;
+  product?: Product | null;
+  shade?: Shade;
+  undertone?: string;
+  looks: { look: "matte" | "dewy"; label: string; glow: number; image: string | null }[];
+}
+export interface Basket {
+  id: string;
+  source: "live" | "replay";
+  demo_label?: string;
+  notice?: string | null;
+  face_map: FaceMapData;
+  jobs: BasketJob[];
+  skipped: BasketSkip[];
+  already_own: { product_id: string; name: string; brand: string; job: string; line: string }[];
+  total_inr: number;
+  next_step: string;
+  tryon: TryOn;
+  rule_version: string;
+}
+
+export interface SaleItem {
+  product_id: string;
+  sale_price_inr: number;
+  blurb: string;
+  product: Product;
+}
+
+export interface Store {
+  name: string;
+  line: string;
+  items: SaleItem[];
+  disclaimer: string;
+}
+
+// ---------------------------------------------------------------- triage (after a breakout)
+export interface TriageCandidate {
+  product_id: string;
+  product_name: string;
+  leave_on: boolean;
+  started_on: string | null;
+  weeks_used: number | null;
+  tier: number;
+  reason: string;
+  in_window: boolean;
+  purge_capable: { label_line: string; ingredient: string; strength: string; note: string }[];
+}
+
+export interface Triage {
+  stop: boolean;
+  stop_symptoms: string[];
+  headline: string;
+  candidates: TriageCandidate[];
+  purge: {
+    possible: boolean;
+    consistent: boolean;
+    ingredient: string | null;
+    label_line: string | null;
+    strength: string | null;
+    conditions: Record<string, unknown>;
+    line: string;
+  };
+  zones: {
+    source: "masks" | "tapped" | "none";
+    source_note: string;
+    zones: FaceZone[];
+    usual_spots: boolean | null;
+    shares: Record<string, number>;
+    baseline_shares: Record<string, number>;
+    line: string;
+  };
+  next_step: string;
+  next_action: {
+    kind: "stop_card" | "open_trial" | "add_products";
+    pause_product_id?: string | null;
+    keep_product_id?: string | null;
+    hold_fixed?: string[];
+    checkpoint_days?: number;
+    brief?: boolean;
+  };
+  inputs: Record<string, any>;
+  rule_version: string;
+  families_version: string;
+}
+
+export interface TriageIn {
+  symptoms?: string[];
+  zones?: FaceZone[];
+  usual_spots?: boolean | null;
+  using?: { product_id: string; started_on?: string | null }[];
+  settled_while_using?: boolean | null;
+  settled_week?: number | null;
+}
+
+/** What a demo scene says the person is dealing with. Never a verdict: the engines do that. */
+export interface SceneSituation {
+  kind: "breakout" | "beginner";
+  zones?: FaceZone[];
+  usual_spots?: boolean | null;
+  symptoms?: string[];
+  weeks_ago?: number;
+  using?: { product_id: string; started_weeks_ago: number }[];
+  answers?: Record<string, string>;
+}
+
+// ---------------------------------------------------------------- write-back
+export interface WriteBack {
+  outcome: ProductOutcome;
+  changed: boolean;
+  note: string;
+  from_verdict: VerdictCode;
+  refused_upgrade: boolean;
+  rule_version: string;
+}
+
+// ---------------------------------------------------------------- start here
+export interface BeginnerQuestion {
+  id: string;
+  text: string;
+  why: string;
+  choices: { value: string; label: string }[];
+}
+
+export interface StarterPlan {
+  skin_type: {
+    value: string | null;
+    /** "answers" until a scan supplies one, which is what the screen says out loud. */
+    source: "answers" | "scan";
+    label: string;
+    zones: Record<string, string>;
+    sensitive: boolean;
+    line: string;
+  };
+  concerns: { concern: string; word: string; score: number | null; sentence: string }[];
+  steps: { role: string; product: Product; check: CartCheck }[];
+  one_at_a_time: string;
+  next_step: string;
+  rule_version: string;
 }
 
 export type RecordType = "suspected_reaction" | "avoid" | "confirmed_allergy";
@@ -267,6 +611,20 @@ export interface Meta {
   min_band: number;
   // The server's crop and scale (app/facecrop.py), so the live guide uses the same numbers.
   capture?: { face_frac: number; target_face_px: Record<"sd" | "hd", number>; output: Record<"sd" | "hd", number[]> };
+  record_types?: RecordType[];
+  rules?: string[];
+  // The new engines' own rules and vocabulary, so no screen hard-codes a list.
+  outcomes?: {
+    values: OutcomeValue[];
+    labels: Record<string, string>;
+    too_early: string;
+    suited_min_weeks: number;
+    zones: FaceZone[];
+  };
+  cartcheck?: { ladder: CartRung[]; labels: Record<CartRung, string>; unknown_label: string; no_scan_line: string };
+  patterns?: { tiers: PatternTier[]; labels: Record<PatternTier, string> };
+  triage?: { window_weeks: number[]; long_use_weeks: number; purge_settle_weeks: number };
+  engine_rules?: string[];
 }
 
 export class ApiError extends Error {
@@ -429,11 +787,49 @@ export const api = {
       deleted: number;
       youcam: { already_deleted: number; requested: number; deleted: number; failed: number; skipped_reason: string | null };
     }>("/api/captures", { method: "DELETE" }),
+  // ---- what happened (app/outcomes.py)
+  outcomes: () => call<ProductOutcome[]>("/api/outcomes"),
+  addOutcome: (o: OutcomeIn) => call<ProductOutcome>("/api/outcomes", json("POST", o)),
+  removeOutcome: (id: string) => call<unknown>(`/api/outcomes/${id}`, { method: "DELETE" }),
+  // ---- the patterns your own records make (app/patterns.py). Two separate runs.
+  patterns: () => call<Patterns>("/api/patterns"),
+  // ---- before you buy (app/cartcheck.py)
+  cartCheck: (productId: string, useScan = true) =>
+    call<CartCheck>("/api/cartcheck", json("POST", { product_id: productId, use_scan: useScan })),
+  store: () => call<Store>("/api/store"),
+  // ---- after a breakout (app/triage.py)
+  triage: (body: TriageIn) => call<Triage>("/api/triage", json("POST", body)),
+  // ---- the loop closing (app/writeback.py). The GET writes nothing.
+  writebackPreview: (trialId: string) => call<WriteBack>(`/api/trials/${trialId}/writeback`),
+  writeback: (trialId: string) =>
+    call<WriteBack>(`/api/trials/${trialId}/writeback`, { method: "POST" }),
+  // ---- start here (app/beginner.py)
+  beginnerQuestions: () =>
+    call<{ questions: BeginnerQuestion[]; rule_version: string }>("/api/beginner/questions"),
+  beginnerPlan: (answers: Record<string, string>) =>
+    call<StarterPlan>("/api/beginner/plan", json("POST", { answers })),
   demoReset: () => call<unknown>("/api/demo/reset", { method: "POST" }),
   /** Guided demo: write one prepared scene (server demo mode only). */
-  demoScene: (name: string) => call<{ scene: string; trial_id: string | null }>(`/api/demo/scene/${name}`, { method: "POST" }),
+  demoScene: (name: string) =>
+    call<{ scene: string; trial_id: string | null; situation?: SceneSituation | null }>(
+      `/api/demo/scene/${name}`,
+      { method: "POST" }
+    ),
+  // ---- the basket (app/basket.py, app/needs.py, app/undertone.py)
+  basketQuestions: () => call<BasketQuestions>("/api/basket/questions"),
+  /** The demo persona's prepared face. Never calls YouCam. */
+  basket: (answers: Record<string, string>, persona = "riya") =>
+    call<Basket>("/api/basket", json("POST", { answers, persona })),
+  /** A selfie. Live only with the passcode on a live server; otherwise the prepared face, labelled. */
+  basketScan: (image: File | null, answers: Record<string, string>, persona = "riya") => {
+    const f = new FormData();
+    if (image) f.append("image", image, image.name || "selfie.jpg");
+    f.append("answers", JSON.stringify(answers));
+    f.append("persona", persona);
+    return call<Basket>("/api/basket/scan", { method: "POST", body: f });
+  },
   /** Free checks on uploaded photos. Never calls YouCam. */
-  precheck: (u: UploadInput) => call<PrecheckResult>("/api/upload/precheck", { method: "POST", body: uploadForm(u) }),
+  precheck:(u: UploadInput) => call<PrecheckResult>("/api/upload/precheck", { method: "POST", body: uploadForm(u) }),
   /** Scan uploaded photos. The server re-runs every precheck itself first. */
   uploadScan: (u: UploadInput) => call<UploadScanResult>("/api/upload/scan", { method: "POST", body: uploadForm(u) }),
   scan: (s: ScanInput, onUploaded?: (fraction: number, done: boolean) => void) => {

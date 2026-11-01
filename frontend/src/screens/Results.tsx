@@ -1,6 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, assetUrl, type Capture, type Evidence, type Finding, type Range } from "../api";
-import { concernLabel, fmtDate, fmtLong, fmtTime, MASKS_DEMO, NOT_DIAGNOSIS, VERDICT } from "../copy";
+import { api, assetUrl, type Capture, type Evidence, type Finding, type Range, type WriteBack } from "../api";
+import {
+  concernLabel,
+  DERMOS_SAYS_LABEL,
+  fmtDate,
+  fmtLong,
+  fmtTime,
+  MASKS_DEMO,
+  NOT_DIAGNOSIS,
+  typicalAppLine,
+  TYPICAL_APP_LABEL,
+  VERDICT,
+  WRITEBACK,
+} from "../copy";
 import { RangeBar } from "../components/RangeBar";
 import { ReactionList, StopCard } from "../components/Reactions";
 import { Btn, Loading, NavBar, Notice, PageHead, PreparedTag, Section, Segmented, TabPanel } from "../components/ui";
@@ -63,6 +75,9 @@ export default function Results({ id, tab: initialTab }: { id: string; tab?: str
   const goal = report.findings.find((f) => f.concern === trial.goal_concern) ?? report.findings[0];
   const v = VERDICT[report.verdict];
   const scores = (cs: Capture[], k: string) => cs.map((c) => c.raw_scores[k]).filter((x): x is number => typeof x === "number");
+  // The grey "a typical app would say" line, from the raw score difference and nothing else.
+  // Only shown when there is a difference to quote, which keeps it honest when there isn't one.
+  const typical = goal ? typicalAppLine(goal.concern, goal.delta_mid) : null;
 
   return (
     <div className="page">
@@ -92,10 +107,21 @@ export default function Results({ id, tab: initialTab }: { id: string; tab?: str
               <h2 className="h2">What stands out</h2>
               {prepared && <PreparedTag />}
             </div>
+            {/* The line most apps would lead with, from the raw score difference alone, in grey
+                and small, above the verdict in bold. It is shown so the difference between a
+                number moving and a result meaning something is impossible to miss. */}
+            {typical && (
+              <p className="typicalapp">
+                <span className="typicalapp__label">{TYPICAL_APP_LABEL}</span>
+                <span className="typicalapp__line">{typical}</span>
+              </p>
+            )}
+            {typical && <p className="standout__label">{DERMOS_SAYS_LABEL}</p>}
             <p className="standout__text">{explained ?? report.message}</p>
             <p className="standout__next">{v.next}</p>
             <RebuyLine text={report.rebuy} />
           </section>
+          <WriteBackCard trialId={id} productName={ev.product.name} />
           {report.comparability && !report.comparability.comparable && (
             <ComparabilityBadge c={report.comparability} retakeTo={`/capture?mode=checkin&trial=${id}`} />
           )}
@@ -360,5 +386,65 @@ function Masks({ concern, base, follow, prepared }: { concern: string; base: Cap
     </div>
     {prepared && (!b || !f) && <p className="muted small">{MASKS_DEMO}</p>}
     </>
+  );
+}
+
+/**
+ * B7: the verdict written back into the product's history, which is what closes the loop.
+ *
+ * The preview is a GET and writes nothing, so the person sees exactly what would be recorded
+ * before anything is. The one rule worth seeing on screen is the refusal: a result that can't
+ * tell either way is recorded as "not sure", never as suiting you.
+ */
+function WriteBackCard({ trialId, productName }: { trialId: string; productName: string }) {
+  const { refresh } = useStore();
+  const [preview, setPreview] = useState<WriteBack | null>(null);
+  const [saved, setSaved] = useState<WriteBack | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSaved(null);
+    api.writebackPreview(trialId).then(setPreview, () => setPreview(null));
+  }, [trialId]);
+
+  if (!preview) return null;
+  const shown = saved ?? preview;
+
+  const write = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      setSaved(await api.writeback(trialId));
+      await refresh();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Section label={WRITEBACK.label}>
+      <p className="formhelp">{WRITEBACK.lede}</p>
+      <div className="writeback">
+        <p className="writeback__row">
+          <strong>{productName}</strong>
+          <span className={`chip chip--outcome-${shown.outcome.effective_outcome}`}>{shown.outcome.label}</span>
+        </p>
+        <p className="writeback__note">{shown.note}</p>
+        {shown.refused_upgrade && <p className="writeback__refused">{WRITEBACK.refused}</p>}
+      </div>
+      {err && <Notice tone="stop">{err}</Notice>}
+      {saved ? (
+        <p className="small">
+          {WRITEBACK.done} <a href="#/history">See it in your history</a>.
+        </p>
+      ) : (
+        <Btn kind="ghost" onClick={write} disabled={busy} wide>
+          {busy ? "Writing…" : WRITEBACK.button}
+        </Btn>
+      )}
+    </Section>
   );
 }

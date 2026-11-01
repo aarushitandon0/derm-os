@@ -17,8 +17,14 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from app import cartcheck as CC
 from app import decision as D
 from app import evidence as E
+from app import outcomes as OC
+from app import patterns as PA
+from app import products as PRD
+from app import triage as TR
+from app import writeback as WBK
 from app.fingerprint import Fingerprint
 from app.llm import explain as LX
 from app.llm import intake as LI
@@ -26,6 +32,8 @@ from app.llm import intake as LI
 from .fakes import ScriptedProvider
 
 CAT = D.load_catalog()
+# The full product index (catalogue + the shop's sale stock) for the three-moment cases.
+IDX = PRD.index()
 CURRENT = ["cl-01", "sr-01", "mo-01", "sp-01"]   # cleanser, niacinamide serum, barrier cream, SPF
 
 
@@ -59,9 +67,20 @@ POSITIVE = "Positive persona: a comparable move beyond noise, judged by the real
 REBUY = "Rebuy line follows the verdict"
 UPLOAD = "Uploaded photos: same checks as the camera, honest baselines, no GPS"
 
+# The three moments (docs/STRATEGY.md section 4). New rows; none of the above changes.
+SEPARATE = "Irritation and breakout never share a suspect list"
+CONTRAST = "Contrast decides: suited products clear, one failed product can't narrow"
+MATCHING = "Synonyms and families match, exact first"
+CART_LADDER = "Cart check: the verdict ladder, in order"
+CART_SOURCES = "Cart check: three labelled sources, change nothing, one next step"
+TRIAGE = "Breakout triage: the window, purging, usual spots, one next step"
+LOOP = "The verdict is written back, and never upgrades a can't-tell"
+PERSONA = "The demo personas produce the expected outcomes, from the real engines"
+
 CATEGORIES = [EXCLUSION, SYNONYM, INCOMPLETE, NOTHING, REACTION, ADD_REPLACE, SEVERAL, OVERLAP,
               NOT_COMPARABLE, SYMPTOMS, PERSISTS, NO_BASELINE, WORDING, POSITIVE, REBUY, UPLOAD,
-              LLM_DOWN, LLM_VALIDATOR, LLM_INTAKE]
+              LLM_DOWN, LLM_VALIDATOR, LLM_INTAKE,
+              SEPARATE, CONTRAST, MATCHING, CART_LADDER, CART_SOURCES, TRIAGE, LOOP, PERSONA]
 
 # Rows of the design table this benchmark cannot test yet, with the reason. None left.
 NOT_BUILT: list[tuple[str, str]] = []
@@ -432,6 +451,197 @@ def gps_stored() -> bool:
     return "56.789" in dump or "gps" in dump.lower()
 
 
+# ---------------------------------------------------------------- the three moments
+# Riya's recorded story, as rows. Everything asserted below is worked out from these by the real
+# engines; no expected value here is copied from engine output.
+def o(pid: str, outcome: str, weeks: int | None = None, **kw) -> OC.ProductOutcome:
+    return OC.ProductOutcome(product_id=pid, outcome=outcome, leave_on=IDX[pid].leave_on,
+                             weeks_used_given=weeks, **kw)
+
+
+RIYA_OUT = [
+    o("sr-02", "irritation", 2),
+    o("tn-03", "irritation", 3),
+    o("sr-05", "breakout", 8, zones=["chin"], usual_spots=True,
+      settled_while_using=True, settled_week=5),
+    o("es-01", "suited", 12),
+    o("mo-03", "suited", 20),
+]
+RIYA_RECS = [D.HistoryRecord(D.RecordType.SUSPECTED_REACTION, product_id="mo-02"),
+             D.HistoryRecord(D.RecordType.AVOID, ingredient="fragrance")]
+# Her baseline fixture means. raw_score is higher for healthier skin, so the lowest are her
+# concerns: oiliness, then pores, then texture.
+RIYA_SCORES = {"redness": 62.1, "texture": 58.6, "acne": 72.2, "pore": 55.2,
+               "oiliness": 48.1, "moisture": 63.2}
+RIYA_SHELF = ["cl-01", "sr-01", "mo-03", "sp-01"]
+
+
+# A fictional product whose only match with her history is a fragrance-family cross-reactor she
+# has never chosen to avoid by name. It is the clean test of "family match ranks one rung softer":
+# citral is in the fragrance family but is not one of the components her "avoid fragrance" record
+# expands to, so nothing blocks it.
+CITRAL = D.Product("x-01", "Test Serum", "Nimbus Skin", "serum", True, 500, ["Aqua", "Citral"], True)
+IDX_X = {**IDX, "x-01": CITRAL}
+
+
+def cart_citral() -> CC.CartCheck:
+    return CC.check(CITRAL, RIYA_RECS, RIYA_OUT, IDX_X, RIYA_SCORES, RIYA_SHELF)
+
+
+def pat(kind: str, rows=None) -> PA.PatternReport:
+    return PA.analyse(kind, RIYA_OUT if rows is None else rows, IDX)
+
+
+def tier_of(kind: str, ingredient: str, rows=None, match: str = "exact") -> str | None:
+    for s in pat(kind, rows).suspects:
+        if s.ingredient == ingredient and s.match_type == match:
+            return s.tier
+    return None
+
+
+def top_suspect(kind: str, rows=None) -> tuple:
+    r = pat(kind, rows)
+    t = r.top()
+    return (None, None, None) if t is None else (t.ingredient, t.match_type, t.tier)
+
+
+def cart(pid: str, scores=RIYA_SCORES, rows=None, recs=None) -> CC.CartCheck:
+    rows = RIYA_OUT if rows is None else rows
+    return CC.check(IDX[pid], RIYA_RECS if recs is None else recs, rows, IDX, scores, RIYA_SHELF)
+
+
+def cart_src(pid: str, key: str, **kw) -> list[str]:
+    return next(s for s in cart(pid, **kw).sources if s.key == key).lines
+
+
+def triage_of(**kw) -> TR.Triage:
+    from datetime import date, timedelta
+    today = date(2026, 10, 31)
+    ago = lambda w: (today - timedelta(weeks=w)).isoformat()  # noqa: E731
+    kw.setdefault("using", [{"product_id": "cl-01", "started_on": ago(30)},
+                            {"product_id": "es-01", "started_on": ago(12)},
+                            {"product_id": "mo-03", "started_on": ago(20)},
+                            {"product_id": "sp-01", "started_on": ago(4)}])
+    kw.setdefault("symptoms", [])
+    kw.setdefault("zones", ["cheeks"])
+    kw.setdefault("usual_spots", False)
+    return TR.assess(catalog=IDX, today=today, **kw)
+
+
+def wb_of(verdict: str, direction: str = "better", weeks: int = 12, symptoms=()) -> str:
+    from datetime import date, timedelta
+    today = date(2026, 10, 31)
+    rep = {"verdict": verdict, "symptoms": list(symptoms),
+           "findings": [{"concern": "pore", "direction": direction, "beyond_noise": True,
+                         "baseline": None, "followup": None, "delta_mid": 1.0}]}
+    return WBK.plan(rep, "sr-09", True, (today - timedelta(weeks=weeks)).isoformat(),
+                    goal_concern="pore", trial_id="t", today=today).outcome.outcome
+
+
+def scene_patterns(name: str, kind: str) -> dict:
+    """Load a demo scene through the real app and read the pattern run it produces."""
+    with api() as c:
+        import app.main as m
+        m.build_scene(name)
+        return c.get("/api/patterns").json()[kind]
+
+
+def scene_cart(name: str, pid: str) -> dict:
+    with api() as c:
+        import app.main as m
+        m.build_scene(name)
+        return c.post("/api/cartcheck", json={"product_id": pid}).json()
+
+
+def scene_cart_no_scan(pid: str) -> list[str]:
+    with api() as c:
+        import app.main as m
+        m.build_scene("riya-store")
+        res = c.post("/api/cartcheck", json={"product_id": pid, "use_scan": False}).json()
+        return next(s for s in res["sources"] if s["key"] == "skin")["lines"]
+
+
+def scene_writeback(name: str) -> tuple:
+    with api() as c:
+        import app.main as m
+        tid = m.build_scene(name)["trial_id"]
+        wb = c.post(f"/api/trials/{tid}/writeback").json()
+        rows = c.get("/api/outcomes").json()
+        return wb["outcome"]["outcome"], [r["product_id"] for r in rows]
+
+
+def scene_writeback_cant_tell() -> tuple:
+    """A trial whose verdict is a can't-tell: the write-back must not make it "suited"."""
+    with api([60.0, 61.0, 62.0, 63.0]) as c:
+        t = c.post("/api/trials", json={"goal_concern": "pore", "product_id": "sr-09"}).json()
+        for _ in range(3):
+            _scan(c, t["id"], "baseline")
+        _scan(c, t["id"], "checkin")        # one check-in only: no comparable pair
+        ev = c.get(f"/api/trials/{t['id']}/evidence").json()
+        wb = c.post(f"/api/trials/{t['id']}/writeback").json()
+        return ev["report"]["verdict"], wb["outcome"]["outcome"]
+
+
+def _fp_ev(ev: float | None) -> Fingerprint:
+    """A fingerprint that matches on everything the gate measures except the metered exposure."""
+    f = fp()
+    f.exposure_ev = ev
+    return f
+
+
+def _beginner_blank() -> tuple:
+    """The beginner scene must clear a full story: no outcomes, no shelf, no trial."""
+    with api() as c:
+        import app.main as m
+        m.build_scene("riya-store")
+        tid = m.build_scene("beginner")["trial_id"]
+        return (c.get("/api/outcomes").json(), c.get("/api/shelf").json()["product_ids"], tid)
+
+
+def _beginner_plan() -> dict:
+    with api() as c:
+        import app.main as m
+        answers = m.build_scene("beginner")["situation"]["answers"]
+        return c.post("/api/beginner/plan", json={"answers": answers}).json()
+
+
+def _beginner_type() -> tuple:
+    st = _beginner_plan()["skin_type"]
+    return (st["value"], st["source"], st["label"])
+
+
+def _beginner_starter() -> tuple:
+    steps = _beginner_plan()["steps"]
+    return ([s["role"] for s in steps], [s["check"]["rule_version"] for s in steps])
+
+
+def _scene_rows_have_no_verdicts() -> list[str]:
+    """A scene writes rows; the engines judge. So no judgement word may appear in what it stored.
+    Returns the offending words, so the expected value is an empty list."""
+    import json as _json
+    with api() as c:
+        import app.main as m
+        m.build_scene("riya-store")
+        stored = _json.dumps(c.get("/api/outcomes").json()).lower()
+    return [w for w in ("suspect", "lead", "verdict", "repeats a pattern", "no conflicts",
+                        "patch-test", "purge") if w in stored]
+
+
+def one_next_step_everywhere() -> list[str]:
+    """Every result the three moments produce must carry exactly one next step. Returns the
+    offenders, so the expected value is an empty list."""
+    bad = []
+    for pid in ("mo-02", "sr-08", "mo-07", "sr-09", "sp-04", "tr-01"):
+        ns = cart(pid).next_step
+        if not ns or "\n" in ns:
+            bad.append(f"cartcheck:{pid}")
+    for kw in ({}, {"symptoms": ["itching"]}, {"usual_spots": True}, {"using": []}):
+        ns = triage_of(**kw).next_step
+        if not ns or "\n" in ns:
+            bad.append(f"triage:{kw}")
+    return bad
+
+
 CASES: list[Case] = [
     # Exclusions
     Case("ex-01", EXCLUSION, "Avoid fragrance; Velvet Rose lists Parfum", "blocked", lambda: status("mo-02", AVOID_FRAGRANCE)),
@@ -693,4 +903,444 @@ CASES: list[Case] = [
     Case("up-08", UPLOAD, "Upload over 15 MB is refused before decoding", "too_big",
          lambda: upload_check([b"\xff\xd8\xff" + b"0" * (15 * 1024 * 1024), _photo(*WINDOW3[1]),
                                _photo(*WINDOW3[2])])["code"]),
+
+    # ---- EXIF exposure in the gate (B12): additional and stricter only.
+    Case("nc-13", NOT_COMPARABLE, "Camera metered 4 stops of difference: not comparable, even though "
+         "the photos look equally bright", (True, False),
+         lambda: (lambda b, f: (
+             E.compare_conditions(b, f, tol={**E.TOLERANCES, "exposure_ev": 99}).comparable,
+             E.compare_conditions(b, f).comparable))(
+             [E.Capture({"redness": 60.0}, _fp_ev(9.0), "sd", ("redness",))] * 2,
+             [E.Capture({"redness": 60.0}, _fp_ev(5.0), "sd", ("redness",))] * 2)),
+    Case("nc-14", NOT_COMPARABLE, "No exposure recorded on either side: not a failure, and not "
+         "counted as a matching field either", (True, False),
+         lambda: (lambda c: (c.comparable, "exposure" in c.checked))(
+             E.compare_conditions([E.Capture({"redness": 60.0}, _fp_ev(None), "sd", ("redness",))] * 2,
+                                  [E.Capture({"redness": 60.0}, _fp_ev(None), "sd", ("redness",))] * 2))),
+
+    # ---------------------------------------------------------------- reaction types kept apart
+    Case("sep-01", SEPARATE, "Her irritation suspect (a drying alcohol) is not in the breakout run",
+         (True, False),
+         lambda: ("alcohol denat" in [s.ingredient for s in pat("irritation").suspects],
+                  "alcohol denat" in [s.ingredient for s in pat("breakout").suspects])),
+    Case("sep-02", SEPARATE, "The irritation run's failure set is only the products that itched",
+         ["sr-02", "tn-03"],
+         lambda: [p["product_id"] for p in pat("irritation").failed_products]),
+    Case("sep-03", SEPARATE, "The breakout run's failure set is only the product that broke her out",
+         ["sr-05"], lambda: [p["product_id"] for p in pat("breakout").failed_products]),
+    Case("sep-04", SEPARATE, "Azelaic acid is a breakout candidate and never an irritation one",
+         (None, True),
+         lambda: (tier_of("irritation", "azelaic acid"),
+                  any(x["ingredient"] == "azelaic acid" for x in pat("breakout").only_in_failed))),
+    Case("sep-05", SEPARATE, "A cleanser that stings is NOT down-weighted (only breakouts are)",
+         (1.0, 0.5),
+         lambda: (max(a.weight for s in pat("irritation", [o("cl-02", "irritation", 6),
+                                                           o("sr-05", "irritation", 8)]).suspects
+                      for a in s.in_failed if a.product_id == "cl-02"),
+                  max(a.weight for s in pat("breakout", [o("cl-02", "breakout", 6),
+                                                         o("sr-05", "breakout", 8)]).suspects
+                      for a in s.in_failed if a.product_id == "cl-02"))),
+
+    # ---------------------------------------------------------------- contrast
+    Case("con-01", CONTRAST, "In 2 of 2 products that itched and 0 that suited: a suspect",
+         ("alcohol denat", "exact", "suspect"), lambda: top_suspect("irritation")),
+    Case("con-02", CONTRAST, "The counts read 'in 2 of 2 ... 0 of 2 that suited you'",
+         "in 2 of 2 products that made you itch, sting or burn, 0 of 2 that suited you",
+         lambda: pat("irritation").top().counts_line()),
+    Case("con-03", CONTRAST, "An ingredient that is also in a suited product is cleared, never a suspect",
+         "cleared_so_far", lambda: tier_of("irritation", "phenoxyethanol")),
+    Case("con-04", CONTRAST, "In 1 failed product of 2 and 0 suited: a lead, not a suspect",
+         "lead", lambda: tier_of("irritation", "ferulic acid")),
+    Case("con-05", CONTRAST, "A 2-week 'suited' product clears nothing: the shared alcohol is still a suspect",
+         ("suspect", "lead"),
+         lambda: (lambda rows: (tier_of("irritation", "alcohol denat", rows),
+                                tier_of("irritation", "linalool", rows)))(
+             [o("sr-02", "irritation", 2), o("tn-03", "irritation", 3), o("mo-02", "suited", 2)])),
+    Case("con-06", CONTRAST, "The same product at 4 weeks does clear it", "cleared_so_far",
+         lambda: tier_of("irritation", "linalool",
+                         [o("sr-02", "irritation", 2), o("tn-03", "irritation", 3),
+                          o("mo-02", "suited", 4)])),
+    Case("con-07", CONTRAST, "A 2-week 'suited' outcome reads as too early to say", "too_early",
+         lambda: o("mo-02", "suited", 2).effective_outcome()),
+    Case("con-08", CONTRAST, "One failed product: says plainly it can't narrow down which ingredient",
+         "One product can't tell us which of its 6 ingredients did it. It takes a second product "
+         "with the same problem, and ones that suited you, to narrow down.",
+         lambda: pat("breakout").cannot_narrow),
+    Case("con-09", CONTRAST, "One failed product names no suspects and no leads at all", [],
+         lambda: [s.ingredient for s in pat("breakout").suspects
+                  if s.tier in ("suspect", "lead")]),
+    Case("con-10", CONTRAST, "One failed product lists only what is in nothing that suited her",
+         (True, False, False),
+         lambda: (lambda names: ("Azelaic Acid" in names, "Aqua" in names, "Glycerin" in names))(
+             [x["display"] for x in pat("breakout").only_in_failed])),
+
+    # ---------------------------------------------------------------- synonyms and families
+    Case("mat-01", MATCHING, "'Parfum (Fragrance)' and 'Fragrance' count as one ingredient: a suspect",
+         "suspect", lambda: tier_of("irritation", "fragrance",
+                                    [o("sr-02", "irritation", 2), o("tn-02", "irritation", 2),
+                                     o("es-01", "suited", 12)])),
+    Case("mat-02", MATCHING, "...and the synonym match names both products", {"sr-02", "tn-02"},
+         lambda: {a.product_id for s in pat("irritation",
+                                            [o("sr-02", "irritation", 2), o("tn-02", "irritation", 2),
+                                             o("es-01", "suited", 12)]).suspects
+                  if s.ingredient == "fragrance" and s.match_type == "exact"
+                  for a in s.in_failed}),
+    Case("mat-03", MATCHING, "The fragrance FAMILY is matched across differently-named components",
+         "suspect", lambda: tier_of("irritation", "fragrance", match="family")),
+    Case("mat-04", MATCHING, "An exact match ranks above a family match of the same tier",
+         ("alcohol denat", "exact"),
+         lambda: (lambda s: (s.ingredient, s.match_type))(
+             [x for x in pat("irritation").suspects if x.tier == "suspect"][0])),
+    Case("mat-05", MATCHING, "A cross-reactor with no exact history is a family match, so patch-test",
+         ("patch_test_first", "family"),
+         lambda: (lambda r: (r.rung, next(m["match_type"] for m in
+                                          next(s for s in r.sources if s.key == "history")
+                                          .detail["matches"])))(cart_citral())),
+    Case("mat-06", MATCHING, "A fatty alcohol is not in the drying-alcohol family", ([], ["drying alcohols"]),
+         lambda: (PA.FAM.family_of("Cetearyl Alcohol"), PA.FAM.family_of("Alcohol Denat."))),
+    Case("mat-07", MATCHING, "Every ingredient family and the purge list are versioned data",
+         ("families-1.0", "patterns-1.0"),
+         lambda: (pat("irritation").families_version, pat("irritation").rule_version)),
+
+    # ---------------------------------------------------------------- the cart-check ladder
+    Case("cl-01b", CART_LADDER, "The ladder is Blocked, Repeats a pattern, Patch-test first, No conflicts",
+         ["blocked", "repeats_a_pattern", "patch_test_first", "no_conflicts"],
+         lambda: [r.value for r in CC.LADDER]),
+    Case("cl-02b", CART_LADDER, "Blocked wins: she avoids fragrance and it lists Parfum", "blocked",
+         lambda: cart("mo-02").rung),
+    Case("cl-03b", CART_LADDER, "Repeats a pattern: it lists her exact irritation suspect",
+         ("repeats_a_pattern", "Repeats a pattern"),
+         lambda: (cart("sr-08").rung, cart("sr-08").verdict_line)),
+    Case("cl-04b", CART_LADDER, "Patch-test first: it lists a lead", "patch_test_first",
+         lambda: cart("tr-01").rung),
+    Case("cl-05b", CART_LADDER, "No conflicts with your history: nothing of hers matched",
+         ("no_conflicts", "No conflicts with your history"),
+         lambda: (cart("sr-09").rung, cart("sr-09").verdict_line)),
+    Case("cl-06b", CART_LADDER, "The bottom rung is never worded as 'safe'", False,
+         lambda: "safe" in " ".join([cart("sr-09").verdict_line, cart("sr-09").next_step]
+                                    + cart_src("sr-09", "history")).lower()),
+    Case("cl-07b", CART_LADDER, "Incomplete INCI can never read as no conflicts: it reads unknown",
+         (True, "Ingredient list incomplete → unknown"),
+         lambda: (cart("mo-07").unknown, cart("mo-07").verdict_line)),
+    Case("cl-08b", CART_LADDER, "A stronger rung still stands on an incomplete label, and carries the tag",
+         ("blocked", True, False),
+         lambda: (lambda r: (r.rung, CC.UNKNOWN_TAG in r.tags, r.unknown))(
+             cart("cl-04", recs=[D.HistoryRecord(D.RecordType.AVOID, ingredient="niacinamide")]))),
+    Case("cl-09b", CART_LADDER, "A complete label is never tagged incomplete", ([], False),
+         lambda: (cart("sr-09").tags, cart("sr-09").unknown)),
+    Case("cl-10b", CART_LADDER, "A family-level suspect is one rung softer than an exact one",
+         ("repeats_a_pattern", "patch_test_first"),
+         lambda: (cart("sr-08").rung,                      # lists Alcohol Denat. by name
+                  cart_citral().rung)),                    # fragrance family only
+
+    # ---------------------------------------------------------------- the three sources
+    Case("cs-01", CART_SOURCES, "Exactly three sources, labelled from history, skin and shelf",
+         ["From your history", "From your skin (YouCam)", "From your shelf"],
+         lambda: [s.label for s in cart("sr-09").sources]),
+    Case("cs-02", CART_SOURCES, "With no scan, the skin source says to scan first",
+         ["No scan yet: scan to see if this is aimed at your skin's top concerns."],
+         lambda: cart_src("sr-09", "skin", scores=None)),
+    Case("cs-03", CART_SOURCES, "Through the API with no scan, the same line is shown",
+         ["No scan yet: scan to see if this is aimed at your skin's top concerns."],
+         lambda: scene_cart_no_scan("sr-09")),
+    Case("cs-04", CART_SOURCES, "No scan does not change the verdict rung", ("no_conflicts", "no_conflicts"),
+         lambda: (cart("sr-09", scores=None).rung, cart("sr-09").rung)),
+    Case("cs-05", CART_SOURCES, "Aimed at names a measured top concern, and says which",
+         "Aimed at pores. Pores is your 2nd lowest YouCam score of the 3 we measured.",
+         lambda: cart_src("sr-09", "skin")[0]),
+    Case("cs-06", CART_SOURCES, "Her lowest measured score is named as the lowest",
+         "Aimed at oiliness and pores. Oiliness is your lowest YouCam score of the 3 we measured.",
+         lambda: cart_src("sp-04", "skin")[0]),
+    Case("cs-07", CART_SOURCES, "Not aimed at a top concern is said plainly",
+         "Not aimed at any of your top 3 measured concerns (oiliness, pores and texture).",
+         lambda: cart_src("sr-08", "skin")[0]),
+    Case("cs-08", CART_SOURCES, "The skin source says 'aimed at' and never that it fixes anything",
+         False,
+         lambda: any(w in " ".join(cart_src(p, "skin")).lower()
+                     for p in ("sr-09", "sp-04", "sr-08") for w in ("fixes", "treats", "cures"))),
+    Case("cs-09", CART_SOURCES, "The shelf source names the duplicate and the new spend",
+         (True, "New spend if you buy it: ₹1,290."),
+         lambda: (lambda l: ("10% Niacinamide Serum" in l[0], l[1]))(cart_src("sr-09", "shelf"))),
+    Case("cs-10", CART_SOURCES, "Change nothing is always one of the options", [],
+         lambda: [p for p in ("mo-02", "sr-08", "mo-07", "sr-09", "sp-04", "tr-01")
+                  if not cart(p).change_nothing.startswith("Change nothing.")]),
+    Case("cs-11", CART_SOURCES, "Exactly one next step on every cart check and every triage", [],
+         one_next_step_everywhere),
+    Case("cs-12", CART_SOURCES, "Each rung has its own next step", 3,
+         lambda: len({cart(p).next_step for p in ("mo-02", "sr-08", "sr-09")})),
+    Case("cs-13", CART_SOURCES, "Every result stores its inputs and its rule versions",
+         ("cartcheck-1.0", "decision-1.0", "patterns-1.0", "families-1.0"),
+         lambda: (lambda v: (v["cartcheck"], v["decision"], v["patterns"], v["families"]))(
+             cart("sr-09").inputs["rule_versions"])),
+    Case("cs-14", CART_SOURCES, "General knowledge is kept under its own key, out of the counts line",
+         (True, False),
+         lambda: (any("often reported" in n for n in
+                      next(s for s in cart("sr-08").sources if s.key == "history")
+                      .detail["general_knowledge"]),
+                  any("often reported" in ln for ln in cart_src("sr-08", "history")))),
+
+    # ---------------------------------------------------------------- breakout triage
+    Case("tg-01", TRIAGE, "The product started inside the 2-8 week window is the top lead",
+         ("sp-01", True), lambda: (lambda c: (c.product_id, c.in_window))(triage_of().lead())),
+    Case("tg-02", TRIAGE, "A leave-on in the window ranks above a wash-off in the window",
+         ["sp-01", "cl-02"],
+         lambda: [c.product_id for c in triage_of(using=[
+             {"product_id": "cl-02", "started_on": "2026-10-03"},
+             {"product_id": "sp-01", "started_on": "2026-10-03"}]).candidates]),
+    Case("tg-03", TRIAGE, "A product used 12 weeks without trouble ranks lowest, with the reason",
+         (True, True),
+         lambda: (lambda c: (c.tier == TR.TIER_LONG_USE,
+                             "used this for 12 weeks without this problem" in c.reason))(
+             next(c for c in triage_of().candidates if c.product_id == "es-01"))),
+    Case("tg-04", TRIAGE, "...and it is never excluded from the list",
+         {"sp-01", "es-01", "mo-03", "cl-01"},
+         lambda: {c.product_id for c in triage_of().candidates}),
+    Case("tg-05", TRIAGE, "The long-use reason says it is not a clean bill", True,
+         lambda: "not a clean bill" in next(
+             c for c in triage_of().candidates if c.product_id == "es-01").reason),
+    Case("tg-06", TRIAGE, "Something started a week ago ranks below the window", TR.TIER_TOO_RECENT_LEAVE_ON,
+         lambda: next(c for c in triage_of(using=[
+             {"product_id": "sp-01", "started_on": "2026-10-03"},
+             {"product_id": "sr-06", "started_on": "2026-10-24"}]).candidates
+             if c.product_id == "sr-06").tier),
+    Case("tg-07", TRIAGE, "No purge without a turnover ingredient, and it says why",
+         (False, True),
+         lambda: (triage_of().purge.possible,
+                  "no ingredient that speeds up cell turnover" in triage_of().purge.line)),
+    Case("tg-08", TRIAGE, "A turnover ingredient plus her usual spots plus settling: purge-consistent",
+         (True, True),
+         lambda: (lambda p: (p.possible, p.consistent))(triage_of(
+             using=[{"product_id": "tr-01", "started_on": "2026-09-26"}], zones=["chin"],
+             usual_spots=True, settled_while_using=True, settled_week=5).purge)),
+    Case("tg-09", TRIAGE, "The same turnover ingredient, but spots in a NEW area: not a purge",
+         (True, False),
+         lambda: (lambda p: (p.possible, p.consistent))(triage_of(
+             using=[{"product_id": "tr-01", "started_on": "2026-09-26"}], zones=["cheeks"],
+             usual_spots=False, settled_while_using=True, settled_week=5).purge)),
+    Case("tg-10", TRIAGE, "A new area is said to point away from purging", True,
+         lambda: "points away from purging" in triage_of().zones.line),
+    Case("tg-11", TRIAGE, "Usual spots are said to be where purging shows up", True,
+         lambda: "usual spots, which is where purging shows up" in triage_of(
+             zones=["chin"], usual_spots=True).zones.line),
+    Case("tg-12", TRIAGE, "Settling later than ~6 weeks is not purge-consistent", False,
+         lambda: triage_of(using=[{"product_id": "tr-01", "started_on": "2026-08-22"}],
+                           zones=["chin"], usual_spots=True, settled_while_using=True,
+                           settled_week=9).purge.consistent),
+    Case("tg-13", TRIAGE, "Symptoms outrank the whole ranking: stop wins",
+         (True, "stop_card"),
+         lambda: (lambda t: (t.stop, t.next_action["kind"]))(triage_of(symptoms=["itching"]))),
+    Case("tg-14", TRIAGE, "The stop next step opens the visit brief, not a trial", True,
+         lambda: "visit brief" in triage_of(symptoms=["burning"]).next_step),
+    Case("tg-15", TRIAGE, "A mild symptom is not a stop", (False, "open_trial"),
+         lambda: (lambda t: (t.stop, t.next_action["kind"]))(triage_of(symptoms=["dryness"]))),
+    Case("tg-16", TRIAGE, "One next step: pause one leave-on product and hold the rest",
+         ("sp-01", {"cl-01", "es-01", "mo-03"}, 14),
+         lambda: (lambda a: (a["pause_product_id"], set(a["hold_fixed"]), a["checkpoint_days"]))(
+             triage_of().next_action)),
+    Case("tg-17", TRIAGE, "Zone shares come from masks when there are numbers, and say so",
+         ("masks", True),
+         lambda: (lambda z: (z.source, "62% of it" in z.line))(triage_of(
+             shares={"cheeks": 0.62, "forehead": 0.2, "chin": 0.18},
+             baseline_shares={"cheeks": 0.11, "forehead": 0.46, "chin": 0.43}).zones)),
+    Case("tg-18", TRIAGE, "With no mask numbers it uses the tapped zones and says which it used",
+         ("tapped", True),
+         lambda: (lambda z: (z.source, "No per-zone mask numbers were available"
+                             in z.to_dict()["source_note"]))(triage_of().zones)),
+
+    # ---------------------------------------------------------------- the loop closes
+    Case("lp-01", LOOP, "A comparable move in the good direction after 4 weeks writes 'suited'",
+         "suited", lambda: wb_of(E.Verdict.MOVED.value)),
+    Case("lp-02", LOOP, "The same move under 4 weeks stays 'not sure'", "not_sure",
+         lambda: wb_of(E.Verdict.MOVED.value, weeks=2)),
+    Case("lp-03", LOOP, "A move in the wrong direction is not 'suited'", "not_sure",
+         lambda: wb_of(E.Verdict.MOVED.value, direction="worse")),
+    Case("lp-04", LOOP, "No detectable change never writes 'suited'", "not_sure",
+         lambda: wb_of(E.Verdict.NO_CHANGE.value)),
+    Case("lp-05", LOOP, "Not comparable never writes 'suited'", "not_sure",
+         lambda: wb_of(E.Verdict.NOT_COMPARABLE.value)),
+    Case("lp-06", LOOP, "Several changes never writes 'suited'", "not_sure",
+         lambda: wb_of(E.Verdict.SEVERAL_CHANGES.value)),
+    Case("lp-07", LOOP, "No baseline never writes 'suited'", "not_sure",
+         lambda: wb_of(E.Verdict.NO_BASELINE.value)),
+    Case("lp-08", LOOP, "A stop on an itch writes an irritation outcome", "irritation",
+         lambda: wb_of(E.Verdict.STOP_REACTION.value, symptoms=["itching"])),
+    Case("lp-09", LOOP, "A stop on spots writes a breakout outcome", "breakout",
+         lambda: wb_of(E.Verdict.STOP_REACTION.value, symptoms=["new_breakouts"])),
+    Case("lp-10", LOOP, "A can't-tell verdict can't soften a reaction she already recorded",
+         ("irritation", True),
+         lambda: (lambda w: (w.outcome.outcome, w.refused_upgrade))(WBK.plan(
+             {"verdict": E.Verdict.NO_CHANGE.value, "findings": [], "symptoms": []},
+             "sr-09", True, "2026-01-01", trial_id="t",
+             existing=OC.ProductOutcome("sr-09", "irritation", True, id="o1")))),
+    Case("lp-11", LOOP, "Through the real app: a can't-tell verdict writes 'not sure', never 'suited'",
+         ("cant_tell_no_baseline", "not_sure"), scene_writeback_cant_tell),
+    Case("lp-12", LOOP, "Meera's positive trial writes 'suited' into her history",
+         ("suited", ["sr-05"]), lambda: scene_writeback("meera-pore")),
+
+    # ---------------------------------------------------------------- the demo personas
+    Case("ps-01", PERSONA, "Riya's scene: her irritation suspect is the shared drying alcohol",
+         ("alcohol denat", "suspect", "exact"),
+         lambda: (lambda s: (s["ingredient"], s["tier"], s["match_type"]))(
+             scene_patterns("riya-store", "irritation")["suspects"][0])),
+    Case("ps-02", PERSONA, "Riya's scene: the suspect's counts line",
+         "in 2 of 2 products that made you itch, sting or burn, 0 of 2 that suited you",
+         lambda: scene_patterns("riya-store", "irritation")["suspects"][0]["counts_line"]),
+    Case("ps-03", PERSONA, "Riya's scene: the azelaic breakout offers a purge reclassification",
+         (["sr-05"], 5),
+         lambda: (lambda offers: ([x["product_id"] for x in offers], offers[0]["settled_week"]))(
+             scene_patterns("riya-store", "breakout")["purge_offers"])),
+    Case("ps-04", PERSONA, "Riya's scene: the purge offer changes nothing by itself", "breakout",
+         lambda: next(p for p in scene_patterns("riya-store", "breakout")["failed_products"]
+                      if p["product_id"] == "sr-05")["outcome"]),
+    Case("ps-05", PERSONA, "Store product A repeats a pattern", "Repeats a pattern",
+         lambda: scene_cart("riya-store", "sr-08")["verdict_line"]),
+    Case("ps-06", PERSONA, "Store product B's label is incomplete, so it reads unknown",
+         "Ingredient list incomplete → unknown",
+         lambda: scene_cart("riya-store", "mo-07")["verdict_line"]),
+    Case("ps-07", PERSONA, "Store product C has no conflicts and is aimed at her measured pores",
+         ("No conflicts with your history", True),
+         lambda: (lambda r: (r["verdict_line"], "Aimed at pores" in next(
+             s for s in r["sources"] if s["key"] == "skin")["lines"][0]))(
+             scene_cart("riya-store", "sr-09"))),
+    Case("ps-08", PERSONA, "Riya's breakout: the new sunscreen is the top lead, and it is not a purge",
+         ("sp-01", False), lambda: (triage_of().lead().product_id, triage_of().purge.possible)),
+    Case("ps-09", PERSONA, "Riya's breakout: the snail mucin ranks low with its reason shown",
+         (True, True),
+         lambda: (lambda c: (c.tier > triage_of().lead().tier,
+                             "12 weeks without this problem" in c.reason))(
+             next(c for c in triage_of().candidates if c.product_id == "es-01"))),
+    Case("ps-10", PERSONA, "Meera's positive verdict is on PORES, not redness",
+         ("moved_beyond_noise", ["pore"]),
+         lambda: (lambda ev: (ev["report"]["verdict"],
+                              [f["concern"] for f in ev["report"]["findings"]
+                               if f["beyond_noise"]]))(api_scene("meera-pore"))),
+    Case("ps-11", PERSONA, "Meera's wording stays at 'during this trial', with the caveat",
+         "Pores looked smaller beyond your usual variation during this trial. " + E.MOVED_CAVEAT,
+         lambda: api_scene("meera-pore")["report"]["message"]),
+    Case("ps-12", PERSONA, "Meera's raw move is 6.0 points, which the 'typical app' line is built from",
+         6.0,
+         lambda: next(f for f in api_scene("meera-pore")["report"]["findings"]
+                      if f["concern"] == "pore")["delta_mid"]),
+    Case("ps-13", PERSONA, "Itching at Meera's check-in: stop outranks her better scores",
+         "stop_reaction",
+         lambda: api_scene("meera-pore", symptoms=("itching",))["report"]["verdict"]),
+    Case("ps-14", PERSONA, "The beginner scene starts from nothing at all", ([], [], None),
+         lambda: (lambda t: t)(_beginner_blank())),
+    Case("ps-15", PERSONA, "The beginner's skin type is labelled 'from your answers'",
+         ("combination", "answers", "from your answers"), _beginner_type),
+    Case("ps-16", PERSONA, "The beginner's starter is 3 steps, each run through the cart check",
+         (["cleanser", "moisturiser", "sunscreen"], ["cartcheck-1.0"] * 3), _beginner_starter),
+    Case("ps-17", PERSONA, "A scene writes rows only: no verdict word appears in what it stored", [],
+         _scene_rows_have_no_verdicts),
+]
+
+
+# ---------------------------------------------------------------- Strategy v2: the basket
+# docs/strategy.md sections 4-5. Expected values are written from the strategy, not from a run.
+from app import basket as BK  # noqa: E402
+from app import needs as ND  # noqa: E402
+from app import undertone as UT  # noqa: E402
+from app.demo_faces import BASKET_ACTIONS, DEMO_FACES  # noqa: E402
+from app.youcam import normalize as _yc_normalize  # noqa: E402
+
+BASKET = "Basket: zone split, finish, history skips, unknown labels, owned, shade, wording"
+CATEGORIES.append(BASKET)
+_STOCK = PRD.shop_tags()
+
+
+def _skin(t: str, u: str) -> dict:
+    return {"data": {"results": {"output": [{"type": "skin_type", "t_zone": {"skin_type": t},
+                                              "u_zone": {"skin_type": u}}]}}}
+
+
+def _tone(hex_: str = "#b9947c") -> dict:
+    return {"data": {"results": {"color": {"skin_color": hex_}}}}
+
+
+def basket_of(skin=None, tone=None, answers=None, shelf=None, history=True) -> dict:
+    face = DEMO_FACES["riya"]
+    skin = face["skin"] if skin is None else skin
+    tone = face["tone"] if tone is None else tone
+    answers = {"finish": "dewy", **(answers or {})}
+    zones = ND.read_zones(skin, answers)
+    measured = _yc_normalize(skin, "sd", BASKET_ACTIONS).raw_scores() if skin else {}
+    return BK.build(zones=zones, measured=measured, ut=UT.from_payload(tone, answers), answers=answers,
+                    stock=_STOCK, catalog=IDX, records=RIYA_RECS if history else [],
+                    outcomes=RIYA_OUT if history else [],
+                    shelf=RIYA_SHELF if shelf is None else shelf).to_dict()
+
+
+def _pick(b: dict, title: str) -> str | None:
+    j = next(j for j in b["jobs"] if j["title"] == title)
+    return (j["pick"] or {}).get("product", {}).get("id")
+
+
+def _moisturisers(b: dict) -> int:
+    return sum(1 for j in b["jobs"] if j["job"] == "moisturiser")
+
+
+def _user_lines(b: dict) -> list[str]:
+    out = [z["line"] for z in b["face_map"]["zones"]] + [b["face_map"]["needs_line"], b["next_step"]]
+    for j in b["jobs"]:
+        out += [w["line"] for w in j["why"]] + [j["how_to_use"], j["note"] or ""]
+    out += [s["reason"] for s in b["skipped"]] + [o["line"] for o in b["already_own"]]
+    return out
+
+
+def _bad_words(b: dict) -> list[str]:
+    import re
+    rx = re.compile(r"\b(scores?|points?)\b|can['’]?t tell|cannot tell|\d+\.\d", re.I)
+    return [t for t in _user_lines(b) if rx.search(t)]
+
+
+def _skip(b: dict, pid: str) -> tuple:
+    s = next((s for s in b["skipped"] if s["product_id"] == pid), None)
+    return (None, None) if s is None else (s["kind"], s["reason"].split(",")[0])
+
+
+CASES += [
+    Case("bk-01", BASKET, "Oily T-zone, dry cheeks: two moisturisers, one per zone", 2,
+         lambda: _moisturisers(basket_of())),
+    Case("bk-02", BASKET, "The two moisturisers are different products, gel on the T-zone, cream on the cheeks",
+         ("gel", "cream"),
+         lambda: (lambda b: (_STOCK[_pick(b, "T-zone moisturiser")]["texture"],
+                             _STOCK[_pick(b, "Cheek moisturiser")]["texture"]))(basket_of())),
+    Case("bk-03", BASKET, "Both zones the same type: one moisturiser for the whole face", 1,
+         lambda: _moisturisers(basket_of(_skin("Dry", "Dry"), history=False, shelf=[]))),
+    Case("bk-04", BASKET, "Matte instead of dewy changes the T-zone pick to a matte finish", "matte",
+         lambda: _STOCK[_pick(basket_of(answers={"finish": "matte"}), "T-zone moisturiser")]["finish"]),
+    Case("bk-05", BASKET, "Dewy: the base pick has a dewy finish, and a matte tint is skipped as the wrong finish",
+         ("dewy", "finish"),
+         lambda: (lambda b: (_STOCK[_pick(b, "Sunscreen / skin tint")]["finish"], _skip(b, "tt-03")[0]))(basket_of())),
+    Case("bk-06", BASKET, "The history suspect is skipped with its exact reason",
+         ("history", "Contains Alcohol Denat."), lambda: _skip(basket_of(), "tt-01")),
+    Case("bk-07", BASKET, "An incomplete ingredient list is never picked; it is skipped as unknown",
+         (False, "unknown"),
+         lambda: (lambda b: ("mo-07" in {_pick(b, j["title"]) for j in b["jobs"]}, _skip(b, "mo-07")[0]))(basket_of())),
+    Case("bk-08", BASKET, "An owned cleanser is not bought again", ("owned", "cl-01", 0),
+         lambda: (lambda j: (j["status"], j["pick"]["product"]["id"], j["pick"]["price_inr"]))(
+             next(j for j in basket_of()["jobs"] if j["job"] == "cleanser"))),
+    Case("bk-09", BASKET, "A store product already on the shelf moves to 'You already own'", ("owned", True),
+         lambda: (lambda b: (next(j for j in b["jobs"] if j["title"] == "Cheek moisturiser")["status"],
+                             any(o["product_id"] == "mo-14" for o in b["already_own"])))(
+             basket_of(shelf=RIYA_SHELF + ["mo-14"]))),
+    Case("bk-10", BASKET, "Warm-neutral skin colour: a warm shade at her depth", ("warm-neutral", "warm", "medium"),
+         lambda: (lambda b: (b["face_map"]["undertone"]["tone"],
+                             next(j for j in b["jobs"] if j["job"] == "base")["pick"]["shade"]["undertone"],
+                             next(j for j in b["jobs"] if j["job"] == "base")["pick"]["shade"]["depth"]))(basket_of())),
+    Case("bk-11", BASKET, "Cool skin colour: a cool shade", "cool",
+         lambda: next(j for j in basket_of(tone=_tone("#c8a7a0"))["jobs"] if j["job"] == "base")["pick"]["shade"]["undertone"]),
+    Case("bk-12", BASKET, "No score, number or 'can't tell' in any user sentence, for every finish", [],
+         lambda: [t for f in ("dewy", "natural", "matte") for t in _bad_words(basket_of(answers={"finish": f}))]),
+    Case("bk-13", BASKET, "Every basket has exactly one next step", [BK.NEXT_STEP] * 3,
+         lambda: [basket_of(answers=a)["next_step"] for a in
+                  ({"finish": "dewy"}, {"finish": "matte", "budget": "under_700"}, {"history": "ignore"})]),
+    Case("bk-14", BASKET, "No face measurement: the zones come from the answers, labelled, and every job answers",
+         ("from your answers", True),
+         lambda: (lambda b: (b["face_map"]["label"], all(j["status"] in ("pick", "owned") for j in b["jobs"])))(
+             basket_of(skin={}, tone={}, answers={"midday": "shiny_tzone"}, history=False, shelf=[]))),
+    Case("bk-15", BASKET, "Riya's basket: owned cleanser, gel T-zone, cream cheeks, dewy tint in her shade",
+         ("cl-01", "mo-11", "mo-14", "tt-02"),
+         lambda: tuple(_pick(basket_of(), t) for t in ("Cleanser", "T-zone moisturiser", "Cheek moisturiser",
+                                                      "Sunscreen / skin tint"))),
 ]

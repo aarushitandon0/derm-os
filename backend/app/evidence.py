@@ -30,6 +30,17 @@ TOLERANCES = {
 }
 MIN_BAND = 0.0  # extra half-width added to every range; raise after Experiment 1 if needed.
 
+# How far the light the CAMERA metered may differ between two capture sets, in EV (stops), before
+# the pair stops being comparable. This is a separate named constant rather than an entry in
+# TOLERANCES because it is a strictly additional check: it can only ever turn a comparable pair
+# into a non-comparable one, never the other way round.
+#
+# 1.5 EV is a little under three times the light. Auto-exposure can hide a change that big in the
+# pixels completely, by brightening a dim room back to a normal-looking photo, which is exactly
+# the case pixel luminance alone cannot catch. Within 1.5 EV the two photos were taken in light of
+# the same order, and the existing luminance and colour checks are the finer measure.
+EXPOSURE_EV_TOLERANCE = 1.5
+
 STOP_SYMPTOMS = {"burning", "stinging", "swelling", "itching", "hives", "blistering",
                  "rash", "peeling_painful", "oozing"}
 
@@ -198,6 +209,26 @@ def compare_conditions(base: list[Capture], follow: list[Capture], tol: dict = T
         warmer = frb > brb
         miss("lighting", f"Light colour differs: this light is {'warmer' if warmer else 'cooler'} than your baseline.",
              "Use the same light source as your baseline (e.g. daylight from a window, not a warm lamp).")
+
+    # Exposure: what the camera itself metered, from EXIF (app/fingerprint.exposure_ev).
+    # Additional to the luminance check above and strictly stricter: it can only add a mismatch.
+    # Missing EXIF is never a pass. When either side has no exposure to read, this check does not
+    # run at all and the pair still has to satisfy every other measure, which is what "missing
+    # EXIF never counts as a pass" means here: nothing is waved through on its absence.
+    bev, fev = _avg([f.exposure_ev for f in bf]), _avg([f.exposure_ev for f in ff])
+    if bev is not None and fev is not None:
+        checked.append("exposure")
+        if abs(bev - fev) > tol.get("exposure_ev", EXPOSURE_EV_TOLERANCE):
+            miss("exposure",
+                 f"The camera metered very different light ({abs(bev - fev):.1f} stops apart), "
+                 f"even if the photos look similarly bright.",
+                 "Take the check-in in the same light as your baseline, not just somewhere that "
+                 "looks as bright.")
+    elif (bev is None) != (fev is None):
+        not_compared.append({"field": "exposure",
+                             "reason": "Only one of these sets has camera exposure recorded, so "
+                                       "the metered light can't be compared. It is not counted "
+                                       "as a match."})
 
     bfr, ffr = _avg([f.face_ratio for f in bf]), _avg([f.face_ratio for f in ff])
     if bfr is not None and ffr is not None:

@@ -2849,3 +2849,784 @@ button,
     scroll-behavior: auto !important;
   }
 }
+
+/* ==================================================================
+   The three moments (docs/STRATEGY.md section 4)
+   Built from the tokens already defined above, so these screens sit in
+   the same design system as the rest of the app. Everything here is
+   laid out for a 390 px phone first; nothing has a fixed width.
+   ================================================================== */
+
+/* ---- Home: the three moments ---- */
+.moments {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+}
+.moment {
+  display: grid;
+  gap: 4px;
+  padding: 18px;
+  border-radius: var(--r-lg);
+  background: var(--card);
+  border: 1px solid var(--line);
+  text-decoration: none;
+  color: var(--ink);
+  transition: background 0.18s var(--ease-out), transform 0.18s var(--ease-out);
+}
+.moment:active {
+  transform: scale(0.99);
+}
+.moment:hover {
+  background: var(--card-2);
+}
+.moment__label {
+  font-family: var(--serif);
+  font-size: 21px;
+  line-height: 1.2;
+}
+.moment__sub {
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--ink-3);
+}
+.starthere {
+  display: grid;
+  gap: 3px;
+  margin-top: 10px;
+  padding: 14px 18px;
+  border-radius: var(--r);
+  border: 1px dashed var(--line-2);
+  background: transparent;
+  text-decoration: none;
+  color: var(--ink);
+}
+.starthere__label {
+  font-size: 15px;
+  font-weight: 600;
+}
+.starthere__sub {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-3);
+}
+.demobox__btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ---- the store (the sale page) ---- */
+.sale {
+  list-style: none;
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+}
+.sale__item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 14px;
+  padding: 14px;
+  border-radius: var(--r-lg);
+  background: var(--raised);
+  border: 1px solid var(--line);
+}
+.sale__art {
+  flex: none;
+}
+.sale__body {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.sale__brand {
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.sale__name {
+  font-family: var(--serif);
+  font-size: 19px;
+  line-height: 1.2;
+}
+.sale__blurb {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-3);
+  font-style: italic;
+}
+.sale__prices {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 2px;
+}
+.sale__now {
+  font-size: 17px;
+}
+.sale__was {
+  font-size: 13.5px;
+  color: var(--ink-3);
+}
+.sale__off {
+  font-size: 12px;
+  font-weight: 600;
+  font-style: normal;
+  color: var(--stop);
+  background: var(--stop-bg);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.sale__item .btn {
+  margin-top: 6px;
+  justify-self: start;
+}
+
+/* ---- the cart check ---- */
+.srclines {
+  list-style: none;
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+}
+.srclines li {
+  font-size: 14.5px;
+  line-height: 1.5;
+  padding-left: 14px;
+  position: relative;
+}
+.srclines li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 9px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--line-2);
+}
+.standout__label {
+  margin-top: 10px;
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  font-weight: 600;
+}
+.standout--steady {
+  background: var(--sage-soft);
+}
+.standout--unsure {
+  background: var(--card-2);
+}
+.standout--moved {
+  background: var(--clay-soft);
+}
+.standout--stop {
+  background: var(--stop-bg);
+}
+.general {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-left: 2px solid var(--line-2);
+  background: var(--card);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+}
+
+/* ---- the evidence view's grey "typical app" line (B8) ---- */
+.typicalapp {
+  display: grid;
+  gap: 2px;
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  background: rgba(28, 26, 23, 0.045);
+  border: 1px dashed var(--line-2);
+}
+.typicalapp__label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.typicalapp__line {
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--ink-3);
+}
+/* The derm//os verdict under it is the bold one. */
+.standout__text {
+  font-weight: 550;
+}
+
+/* ---- outcomes: what happened, product by product ---- */
+.outcomes {
+  list-style: none;
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+}
+.outcome {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  padding: 12px 36px 12px 14px;
+  border-radius: var(--r);
+  background: var(--raised);
+  border: 1px solid var(--line);
+}
+.outcome--stop {
+  border-left: 3px solid var(--stop);
+}
+.outcome--moved {
+  border-left: 3px solid var(--sage);
+}
+.outcome--unsure {
+  border-left: 3px solid var(--line-2);
+}
+.outcome__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.outcome__line {
+  font-size: 14px;
+  line-height: 1.5;
+}
+.outcome__meta {
+  font-size: 12.5px;
+}
+.outcome__note {
+  font-size: 13px;
+  font-style: italic;
+  color: var(--ink-3);
+}
+.chip--outcome-suited {
+  background: var(--sage-soft);
+  color: var(--sage);
+}
+.chip--outcome-irritation,
+.chip--outcome-breakout {
+  background: var(--stop-bg);
+  color: var(--stop);
+}
+.chip--outcome-not_sure,
+.chip--outcome-too_early {
+  background: var(--card-2);
+  color: var(--ink-2);
+}
+.outcomeform {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 14px;
+  border-radius: var(--r);
+  background: var(--card);
+}
+.fieldrow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+/* ---- patterns: suspects and leads ---- */
+.patrun {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: var(--r);
+  background: var(--card);
+}
+.patrun__headline {
+  font-size: 15px;
+  line-height: 1.5;
+  font-weight: 550;
+}
+.patrun__cant,
+.patrun__unknown {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  background: var(--card-2);
+}
+.suspects {
+  list-style: none;
+  display: grid;
+  gap: 8px;
+  margin: 4px 0 0;
+  padding: 0;
+}
+.suspect {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  background: var(--raised);
+}
+.suspect--suspect {
+  border-left: 3px solid var(--stop);
+}
+.suspect--lead {
+  border-left: 3px solid var(--clay);
+}
+.suspect__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.suspect__counts {
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+.suspect__where {
+  font-size: 12px;
+}
+.suspect__general {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink-3);
+  margin-top: 2px;
+}
+.chip--suspect {
+  background: var(--stop-bg);
+  color: var(--stop);
+}
+.chip--lead {
+  background: var(--clay-soft);
+  color: var(--stop);
+}
+.chip--cleared_so_far {
+  background: var(--sage-soft);
+  color: var(--sage);
+}
+.purgeoffer {
+  display: grid;
+  gap: 5px;
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: var(--r-sm);
+  background: var(--clay-soft);
+}
+.purgeoffer p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+/* ---- breakout triage: the ranking ---- */
+.ranking {
+  list-style: none;
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  counter-reset: rank;
+}
+.ranking__item {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: var(--r);
+  background: var(--raised);
+  border: 1px solid var(--line);
+}
+.ranking__item--stop {
+  border-left: 3px solid var(--stop);
+}
+.ranking__item--unsure {
+  border-left: 3px solid var(--clay);
+}
+.ranking__item--steady {
+  border-left: 3px solid var(--line-2);
+}
+.ranking__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.ranking__why {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+/* ---- the write-back card ---- */
+.writeback {
+  display: grid;
+  gap: 5px;
+  padding: 12px 14px;
+  border-radius: var(--r);
+  background: var(--card);
+}
+.writeback__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+.writeback__note {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.writeback__refused {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--stop);
+}
+
+/* ---- start here: the 3-step starter ---- */
+.starter {
+  list-style: none;
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  counter-reset: step;
+}
+.starter__step {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: var(--r);
+  background: var(--raised);
+  border: 1px solid var(--line);
+}
+.starter__role {
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.starter__name {
+  font-size: 15px;
+  line-height: 1.35;
+}
+.starter__verdict {
+  font-size: 13px;
+  font-weight: 600;
+}
+.starter__verdict--no_conflicts {
+  color: var(--sage);
+}
+.starter__verdict--patch_test_first,
+.starter__verdict--repeats_a_pattern,
+.starter__verdict--blocked {
+  color: var(--stop);
+}
+
+/* ---- narrow phones: 390 px and down ---- */
+@media (max-width: 400px) {
+  .sale__item {
+    grid-template-columns: 1fr;
+  }
+  .sale__art {
+    display: none;
+  }
+  .fieldrow {
+    grid-template-columns: 1fr;
+  }
+  .moment__label {
+    font-size: 19px;
+  }
+}
+
+/* A segmented control whose options are short sentences rather than single words. Without this
+   the three-option "are those your usual spots?" control is 477 px wide and pushes the whole
+   page sideways at 390 px. Scoped to a modifier so the existing single-word controls are
+   untouched. */
+.segmented--wrap {
+  flex-wrap: wrap;
+}
+.segmented--wrap .segmented__opt {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 8px 10px;
+  white-space: normal;
+  font-size: 13.5px;
+  line-height: 1.25;
+}
+
+/* ---- Strategy v2: the basket (shop by your face) ---- */
+.hero {
+  display: grid;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 22px 20px;
+  border-radius: var(--r-lg);
+  background: var(--ink);
+  color: var(--paper);
+  text-decoration: none;
+  transition: transform 0.18s var(--ease-out);
+}
+.hero:active {
+  transform: scale(0.99);
+}
+.hero__label {
+  font-family: var(--serif);
+  font-size: 26px;
+  line-height: 1.15;
+}
+.hero__sub {
+  font-size: 14px;
+  line-height: 1.45;
+  opacity: 0.82;
+}
+.moments--small {
+  grid-template-columns: 1fr 1fr;
+  margin-top: 10px;
+}
+.moment--small {
+  padding: 14px;
+}
+.moment--small .moment__label {
+  font-size: 17px;
+}
+.moment--small .moment__sub {
+  font-size: 12.5px;
+}
+.pickphoto {
+  display: grid;
+  gap: 3px;
+  padding: 14px 16px;
+  border-radius: var(--r);
+  border: 1px dashed var(--line-2);
+  cursor: pointer;
+}
+.pickphoto__title {
+  font-weight: 600;
+}
+.pickphoto__sub {
+  font-size: 13px;
+  color: var(--ink-3);
+  overflow-wrap: anywhere;
+}
+.pickphoto input {
+  max-width: 100%;
+  font-size: 13px;
+}
+.facemap {
+  display: grid;
+  grid-template-columns: 132px 1fr;
+  gap: 14px;
+  align-items: center;
+  margin: 8px 0 6px;
+}
+.facemap__svg {
+  width: 132px;
+  height: auto;
+}
+.facemap__legend {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.facemap__zone {
+  display: grid;
+  grid-template-columns: 14px 1fr;
+  gap: 8px;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.35;
+}
+.facemap__zone > span:last-child {
+  display: grid;
+  min-width: 0;
+}
+.facemap__dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  margin-top: 2px;
+}
+.facemap__dot--tone {
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+.facemap__hint {
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+.facemap__src {
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+.bcards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.bcard {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border-radius: var(--r-lg);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  min-width: 0;
+}
+.bcard--owned {
+  background: var(--sage-soft);
+}
+.bcard__job {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.bcard__head {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  gap: 12px;
+  align-items: center;
+}
+.bcard__body {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.bcard__brand {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.bcard__name {
+  font-family: var(--serif);
+  font-size: 19px;
+  line-height: 1.2;
+}
+.bcard__shade,
+.bcard__price {
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.bcard__why {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+.bcard__whyrow dt {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink-3);
+}
+.bcard__whyrow dd {
+  margin: 1px 0 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.bcard__how {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+.swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  vertical-align: -1px;
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+.skips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.skip {
+  display: grid;
+  gap: 2px;
+  padding: 12px 14px;
+  border-radius: var(--r);
+  background: var(--card);
+  min-width: 0;
+}
+.skip--history {
+  background: var(--stop-bg);
+}
+.skip__name {
+  font-weight: 600;
+  font-size: 14px;
+}
+.skip__kind {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.skip__reason {
+  font-size: 13.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.nextstep {
+  font-weight: 600;
+}
+.tryon {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 10px 0;
+}
+.tryon__panel {
+  margin: 0;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.tryon__img,
+.tryon__empty {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  border-radius: var(--r);
+  object-fit: cover;
+}
+.tryon__empty {
+  position: relative;
+  display: grid;
+  place-items: end center;
+  overflow: hidden;
+  padding: 10px;
+}
+.tryon__sheen {
+  position: absolute;
+  inset: 0;
+}
+.tryon__sheen--dewy {
+  background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.55), transparent 55%);
+}
+.tryon__sheen--matte {
+  background: rgba(255, 255, 255, 0.08);
+}
+.tryon__wait {
+  position: relative;
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: center;
+  background: rgba(251, 249, 245, 0.88);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+.tryon__label {
+  text-align: center;
+  font-weight: 600;
+  font-size: 14px;
+}

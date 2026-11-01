@@ -14,8 +14,10 @@ Three rules that decide how this is written:
 * Raw scores are read here and never shown. The user sees words, not numbers.
 
 The skin_type response shape is only partly documented (subcategories whole, t_zone, u_zone; the
-values Normal / Oily / Dry / Combination, optionally "& Redness"). `parse_zones()` is tolerant of
-how those values are wrapped, and is tested on synthetic dicts of the documented shape.
+values Normal / Oily / Dry / Combination, optionally "& Redness"). The live SD response (checked
+2026-11-01) sends one output item per region: {"type": "skin_type", "region": "t_zone",
+"skin_type": "Oily"}. `parse_zones()` reads that shape and stays tolerant of how values are
+wrapped; it is tested on the live shape and on synthetic dicts of the documented one.
 """
 from __future__ import annotations
 
@@ -84,8 +86,30 @@ def _read_type(v) -> tuple[str | None, bool]:
     return base, redness
 
 
+def _region_items(node) -> dict | None:
+    """The live SD shape (checked 2026-11-01): one output item PER REGION,
+    {"type": "skin_type", "region": "whole" | "t_zone" | "u_zone", "skin_type": "Oily"}.
+    Gathered into {region: item}, or None when the response isn't shaped like that."""
+    if isinstance(node, dict):
+        for k in ("data", "results", "output", "response"):
+            if k in node:
+                hit = _region_items(node[k])
+                if hit:
+                    return hit
+        return None
+    if isinstance(node, list):
+        out = {item["region"]: item for item in node
+               if isinstance(item, dict) and str(item.get("type", "")).lower() in ("skin_type", "hd_skin_type")
+               and item.get("region") in ("whole", "t_zone", "u_zone")}
+        return out or None
+    return None
+
+
 def _find_skin_type(node):
     """The skin_type block inside data/results/output (JSON) or a score_info dict (ZIP)."""
+    regions = _region_items(node)
+    if regions:
+        return regions
     if isinstance(node, dict):
         if str(node.get("type", "")).lower() in ("skin_type", "hd_skin_type"):
             return node

@@ -20,6 +20,41 @@ def test_parse_zones_documented_shapes(payload):
     assert z["t_zone"].source == "face" and z["t_zone"].label == "From your face (YouCam)"
 
 
+# The real SD skin_type shape, from the live scan of 2026-11-01 (values only; mask URLs dropped):
+# one output item PER REGION, each {"type": "skin_type", "region": ..., "skin_type": ...}, mixed in
+# with the concern items and the "all" / "skin_age" / "resize_image" items.
+LIVE_SD_OUTPUT_2026_11_01 = {"status": 200, "data": {"error": None, "task_status": "success", "results": {"output": [
+    {"type": "texture", "raw_score": 91.31034016609192, "ui_score": 87, "mask_urls": [], "url": None},
+    {"type": "oiliness", "raw_score": 70.19892120361328, "ui_score": 76, "mask_urls": [], "url": None},
+    {"type": "radiance", "raw_score": 88.50963115692139, "ui_score": 84, "mask_urls": [], "url": None},
+    {"type": "redness", "raw_score": 86.21255493164062, "ui_score": 83, "mask_urls": [], "url": None},
+    {"type": "pore", "raw_score": 76.87488901615143, "ui_score": 79, "mask_urls": [], "url": None},
+    {"type": "acne", "raw_score": 86.38593, "ui_score": 83, "mask_urls": [], "url": None},
+    {"type": "moisture", "raw_score": 58.21594595909119, "ui_score": 73, "mask_urls": [], "url": None},
+    {"type": "skin_type", "region": "whole", "skin_type": "Combination", "mask_urls": [], "url": None},
+    {"type": "skin_type", "region": "t_zone", "skin_type": "Oily", "mask_urls": [], "url": None},
+    {"type": "skin_type", "region": "u_zone", "skin_type": "Normal", "mask_urls": [], "url": None},
+    {"type": "all", "score": 80.71428571428571, "url": None},
+    {"type": "skin_age", "score": 26, "url": None},
+    {"type": "resize_image", "mask_urls": [], "url": None},
+]}}}
+
+
+def test_parse_zones_live_sd_shape_one_item_per_region():
+    z = N.parse_zones(LIVE_SD_OUTPUT_2026_11_01)
+    assert (z["t_zone"].type, z["u_zone"].type) == ("oily", "normal")
+    assert {r.source for r in z.values()} == {"face"} and not any(r.redness for r in z.values())
+    # read_zones takes the measured zones, not the answers, when the response has them.
+    assert {r.source for r in N.read_zones(LIVE_SD_OUTPUT_2026_11_01, {"midday": "shiny_all"}).values()} == {"face"}
+
+
+def test_parse_zones_live_shape_whole_only_is_split():
+    whole_only = {"data": {"results": {"output": [
+        {"type": "skin_type", "region": "whole", "skin_type": "Combination"}]}}}
+    z = N.parse_zones(whole_only)
+    assert (z["t_zone"].type, z["u_zone"].type) == ("oily", "normal")
+
+
 def test_redness_suffix_is_read_and_adds_a_calm_need():
     z = N.parse_zones({"t_zone": "Oily", "u_zone": "Dry & Redness"})
     assert z["u_zone"].type == "dry" and z["u_zone"].redness and not z["t_zone"].redness

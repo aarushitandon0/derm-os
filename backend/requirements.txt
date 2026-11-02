@@ -8,8 +8,7 @@ python-dotenv>=1.0
 # Accounts (app/auth.py, app/db.py): Supabase token checks, and Postgres when DATABASE_URL is set.
 pyjwt[crypto]>=2.8
 psycopg[binary,pool]>=3.2
-# Server-side face crop (app/facecrop.py). Models are fetched ahead of time, never while serving:
-# `python -m app.modelstore` (the Docker image does this at build into DERMOS_MODEL_DIR=/app/models).
+# Server-side face crop (app/facecrop.py). The ~230 KB model downloads to app/models/ on first use.
 # Pinned to the version the live run and the memory check used (1.2.0, a py3-none wheel).
 mediapipe==1.2.0
 numpy>=1.26

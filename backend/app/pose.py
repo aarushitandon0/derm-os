@@ -18,7 +18,6 @@ A face cut off by the frame is already refused by app/facecrop.py (out_of_frame)
 """
 from __future__ import annotations
 
-import logging
 import math
 import threading
 from dataclasses import asdict, dataclass
@@ -26,10 +25,6 @@ from pathlib import Path
 from typing import Callable
 
 from PIL import Image
-
-from . import modelstore
-
-log = logging.getLogger("dermos")
 
 RULE_VERSION = "precheck-1.0"
 MAX_YAW = 35.0
@@ -44,7 +39,9 @@ FIXES = {
     "too_dark": "It's too dark. Face a window or a bright, even light and try again.",
 }
 
-MODEL_NAME = "face_landmarker.task"   # found by app/modelstore.py (DERMOS_MODEL_DIR)
+_APP = Path(__file__).resolve().parent
+MODEL_NAME = "face_landmarker.task"
+MODEL_PATHS = (_APP / "models" / MODEL_NAME, _APP.parent / "scripts" / "models" / MODEL_NAME)
 MODEL_URL = ("https://storage.googleapis.com/mediapipe-models/face_landmarker/"
              "face_landmarker/float16/1/face_landmarker.task")
 
@@ -96,8 +93,16 @@ Estimator = Callable[[Image.Image], "Pose | None"]
 
 
 def ensure_model() -> Path:
-    """The pose model file. Never downloads at runtime (see app/modelstore.py)."""
-    return modelstore.resolve(MODEL_NAME)
+    for p in MODEL_PATHS:
+        if p.exists():
+            return p
+    import urllib.request
+    dest = MODEL_PATHS[0]
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_suffix(".part")
+    urllib.request.urlretrieve(MODEL_URL, tmp)  # model weights only; nothing is uploaded
+    tmp.replace(dest)
+    return dest
 
 
 class Landmarker:
@@ -125,44 +130,30 @@ class Landmarker:
 
 _est: Estimator | None = None
 _est_failed = False
-_est_error: str | None = None
-_run_error_logged = False
 _lock = threading.Lock()
-
-
-def warm() -> str | None:
-    """Load the estimator now. None when it is ready, else the reason it can't run here."""
-    global _est, _est_failed, _est_error
-    with _lock:
-        if _est is None and not _est_failed:
-            try:
-                _est = Landmarker()
-            except Exception as e:  # noqa: BLE001 - missing package, missing model, ...
-                _est_failed = True
-                _est_error = f"{type(e).__name__}: {e}"
-                log.error("Pose model failed to start; the precheck runs without head pose: %s", _est_error)
-        return None if _est is not None else (_est_error or "not loaded")
 
 
 def estimate(img: Image.Image) -> Pose | None:
     """The pose, or None when no face is found or the model can't run here (never raises:
     the precheck must not be the reason a photo can't be scanned)."""
-    global _run_error_logged
-    warm()
-    est = _est
+    global _est, _est_failed
+    with _lock:
+        if _est is None and not _est_failed:
+            try:
+                _est = Landmarker()
+            except Exception:  # noqa: BLE001 - missing package, no network for the model, ...
+                _est_failed = True
+        est = _est
     if est is None:
         return None
     try:
         return est(img)
-    except Exception as e:  # noqa: BLE001
-        if not _run_error_logged:
-            log.error("Pose estimate failed: %s: %s", type(e).__name__, e)
-            _run_error_logged = True
+    except Exception:  # noqa: BLE001
         return None
 
 
 def set_estimator(est: Estimator | None) -> None:
     """Tests replace the model with a fake."""
-    global _est, _est_failed, _est_error
+    global _est, _est_failed
     with _lock:
-        _est, _est_failed, _est_error = est, False, None
+        _est, _est_failed = est, False

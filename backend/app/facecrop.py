@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import logging
 import threading
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -28,7 +29,10 @@ from typing import Callable
 
 from PIL import Image, ImageOps
 
+from . import modelstore
 from . import photometa  # noqa: F401  (registers the HEIC decoder before any photo is opened)
+
+log = logging.getLogger("dermos")
 
 NORMALISE_VERSION = "norm-1.0"
 FACE_FRAC = 0.75                                  # face width / crop width
@@ -38,9 +42,7 @@ MIN_DETECTION_SCORE = 0.5
 DETECTOR_NAME = "MediaPipe BlazeFace short-range (local)"
 ORIENTATION_TAG = 0x0112
 
-_APP = Path(__file__).resolve().parent
-MODEL_NAME = "blaze_face_short_range.tflite"
-MODEL_PATHS = (_APP / "models" / MODEL_NAME, _APP.parent / "scripts" / "models" / MODEL_NAME)
+MODEL_NAME = "blaze_face_short_range.tflite"   # found by app/modelstore.py (DERMOS_MODEL_DIR)
 MODEL_URL = ("https://storage.googleapis.com/mediapipe-models/face_detector/"
              "blaze_face_short_range/float16/1/blaze_face_short_range.tflite")
 
@@ -224,16 +226,8 @@ class DetectorUnavailable(RuntimeError):
 
 
 def ensure_model() -> Path:
-    for p in MODEL_PATHS:
-        if p.exists():
-            return p
-    import urllib.request
-    dest = MODEL_PATHS[0]
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    tmp = dest.with_suffix(".part")
-    urllib.request.urlretrieve(MODEL_URL, tmp)  # model weights only; nothing is uploaded
-    tmp.replace(dest)
-    return dest
+    """The face model file. Never downloads at runtime (see app/modelstore.py)."""
+    return modelstore.resolve(MODEL_NAME)
 
 
 class BlazeFace:
@@ -269,19 +263,24 @@ class BlazeFace:
 
 _detector: Detector | None = None
 _detector_lock = threading.Lock()
+_failure_logged = False
 
 
 def get_detector() -> Detector:
     """The shared detector, created on first use. Tests replace it with set_detector()."""
-    global _detector
+    global _detector, _failure_logged
     with _detector_lock:
         if _detector is None:
             try:
                 _detector = BlazeFace()
-            except DetectorUnavailable:
-                raise
-            except Exception as e:  # noqa: BLE001 - model download or runtime failure
-                raise DetectorUnavailable(f"face detector failed to start ({type(e).__name__})") from e
+            except Exception as e:  # noqa: BLE001 - missing model, missing library, runtime failure
+                reason = f"{type(e).__name__}: {e}"
+                if not _failure_logged:   # the real cause, once per process (no image data here)
+                    log.error("Face detector failed to start: %s", reason)
+                    _failure_logged = True
+                if isinstance(e, DetectorUnavailable):
+                    raise
+                raise DetectorUnavailable(f"face detector failed to start ({reason})") from e
         return _detector
 
 

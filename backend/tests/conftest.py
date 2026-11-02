@@ -31,8 +31,11 @@ def centred_face(img):
 
 
 @pytest.fixture(autouse=True)
-def _fake_face_detector():
-    from app import facecrop, pose
+def _fake_face_detector(monkeypatch):
+    from app import facecrop, modelstore, pose
+    # Startup's child-process model probe (app/modelstore.probe) passes in tests unless a test says
+    # otherwise; it never starts a real MediaPipe process here.
+    monkeypatch.setattr(modelstore, "probe", lambda timeout=None: (True, "exit 0"))
     facecrop.set_detector(centred_face)
     # Head pose: a normal, slightly turned selfie unless a test says otherwise. The real
     # MediaPipe model is never loaded in tests.

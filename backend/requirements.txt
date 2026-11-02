@@ -8,9 +8,12 @@ python-dotenv>=1.0
 # Accounts (app/auth.py, app/db.py): Supabase token checks, and Postgres when DATABASE_URL is set.
 pyjwt[crypto]>=2.8
 psycopg[binary,pool]>=3.2
-# Server-side face crop (app/facecrop.py). The ~230 KB model downloads to app/models/ on first use.
-# Pinned to the version the live run and the memory check used (1.2.0, a py3-none wheel).
-mediapipe==1.2.0
+# Server-side face crop (app/facecrop.py). Models are fetched ahead of time, never while serving:
+# `python -m app.modelstore` (the Docker image does this at build into DERMOS_MODEL_DIR=/app/models).
+# Pinned to 0.10.35, the newest 0.10.x (Tasks API: FaceDetector + FaceLandmarker; py3-none wheels for
+# manylinux_2_28 and Windows). 1.2.0 aborted in Render's container (tcmalloc couldn't read the CPU count).
+# Whatever the version, the server loads MediaPipe in a child process first (app/modelstore.probe).
+mediapipe==0.10.35
 numpy>=1.26
 # HEIC/HEIF uploads (iPhone photos). Python 3.12 wheels for Linux and Windows; without it HEIC is refused.
 pillow-heif>=1.0

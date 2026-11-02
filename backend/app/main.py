@@ -43,6 +43,7 @@ from . import photometa as P
 from . import pose as PO
 from . import facecrop as F
 from . import llm as L
+from . import modelstore as MS
 from . import needs as ND
 from . import products as PRD
 from . import scenes as S
@@ -57,6 +58,11 @@ from .youcam import (MAKEUP_VTO, SKIN_TONE, UNUSABLE_PHOTO_ERRORS, YouCamClient,
                      strip_urls, validate_actions)
 
 log = logging.getLogger("dermos")
+if not log.handlers:   # uvicorn only configures its own loggers; without this, INFO lines are dropped
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(logging.Formatter("%(levelname)s:     %(name)s: %(message)s"))
+    log.addHandler(_handler)
+    log.setLevel(logging.INFO)
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 DB_PATH = Path(os.environ.get("DERMOS_DB", BACKEND_DIR / "dermos.db"))
 MEDIA_DIR = Path(os.environ.get("DERMOS_MEDIA", BACKEND_DIR / "media"))
@@ -78,8 +84,48 @@ def unit_reserve() -> float:
     except ValueError:
         return float(DEFAULT_UNIT_RESERVE)
 
+def face_check() -> bool:
+    """Whether the face detector loads on this server (cached after the first success)."""
+    try:
+        F.get_detector()
+        return True
+    except F.DetectorUnavailable:
+        return False
+
+
+def model_self_check() -> dict:
+    """Load both models at startup and say so in the log, so a broken image shows up at once."""
+    face = face_check()   # on failure, get_detector() has already logged the real cause
+    if face:
+        log.info("face model OK (%s)", F.ensure_model())
+    else:
+        log.error("face model FAILED: photo checks will answer 503 until this is fixed")
+    pose_err = PO.warm()
+    if pose_err is None:
+        log.info("pose model OK (%s)", PO.ensure_model())
+    else:
+        log.error("pose model FAILED: %s", pose_err)
+    return {"face": face, "pose": pose_err is None}
+
+
+def startup_models() -> dict:
+    """Probe both models in a child process first (app/modelstore.probe): a native MediaPipe abort
+    there can't take this server down. Exit 0: load in-process as usual. Anything else (nonzero,
+    abort, timeout): face_check is off, photo checks answer 503, everything else keeps serving."""
+    ok, how = MS.probe()
+    if ok:
+        log.info("model probe OK (child process %s)", how)
+        return model_self_check()
+    log.error("model probe FAILED (child process %s): MediaPipe stays unloaded; face_check=false, "
+              "photo checks answer 503 until this is fixed", how)
+    F.disable(how)
+    PO.disable(how)
+    return {"face": False, "pose": False, "probe": how}
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    startup_models()
     if flag("DERMOS_SEED"):
         seeded = seed_if_empty()
         if seeded:
@@ -231,7 +277,9 @@ def health(x_live_passcode: str | None = Header(None)):
             # Only whether the optional language layer is on, never which key.
             "llm": L.get_provider() is not None,
             # Whether this server can check sign-in tokens. Never which project or key.
-            "accounts": AU.configured()}
+            "accounts": AU.configured(),
+            # Whether photos can be checked here (the local face detector loads). No YouCam call.
+            "face_check": face_check()}
 
 
 @app.get("/api/catalog")
@@ -424,7 +472,7 @@ def _refusal(e: Exception) -> HTTPException:
     """One plain fix for any photo the free checks refuse."""
     if isinstance(e, (F.Refusal, P.UploadRefused)):
         return HTTPException(422, {"code": e.code, "message": e.fix})
-    log.warning("Face detector unavailable; photo refused.")
+    log.warning("Face detector unavailable; photo refused (%s).", e)
     return HTTPException(503, "The face check isn't available on this server right now, so the photo "
                               "can't be prepared for analysis. Try again in a minute.")
 

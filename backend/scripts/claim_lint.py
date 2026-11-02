@@ -87,6 +87,7 @@ SHOPPING_FILES = {
     "frontend/src/basketCopy.ts",
     "backend/app/basket.py",
     "backend/app/needs.py",
+    "backend/app/findings.py",
     "backend/app/undertone.py",
     "backend/app/demo_faces.py",
 }

@@ -33,6 +33,7 @@ from datetime import date
 from . import cartcheck as CC
 from . import chips as CH
 from . import decision as D
+from . import findings as F
 from . import lookfor as LF
 from . import needs as N
 from . import patterns as P
@@ -292,7 +293,7 @@ class Basket:
 
 
 def face_map(zones: dict[str, N.ZoneRead], needs: list[N.Need], ut: U.Undertone, *,
-             demo: bool = False) -> dict:
+             demo: bool = False, measured: dict[str, float] | None = None) -> dict:
     """What the face map screen shows: one plain line per zone, the top needs, the undertone."""
     src = "face" if any(z.source == "face" for z in zones.values()) else "answers"
     return {
@@ -304,6 +305,8 @@ def face_map(zones: dict[str, N.ZoneRead], needs: list[N.Need], ut: U.Undertone,
         "undertone": ut.to_dict(),
         "source": src, "label": N.FROM_FACE if src == "face" else N.FROM_ANSWERS,
         "demo": demo,
+        # What the scan found, in words (app/findings.py). None when nothing was measured.
+        "findings": F.block(measured, needs),
     }
 
 
@@ -467,7 +470,7 @@ def build(*, zones: dict[str, N.ZoneRead], measured: dict[str, float] | None, ut
              "purge_questions": [c.to_dict() for c in chip_objs if c.purge_question()],
              "beginner": beginner, "rule_version": CH.RULE_VERSION}
 
-    fm = face_map(zones, needs, ut, demo=demo)
+    fm = face_map(zones, needs, ut, demo=demo, measured=measured)
     inputs = {
         "answers": answers, "zones": {z: r.to_dict() for z, r in zones.items()},
         "measured": dict(measured or {}), "undertone": ut.to_dict(), "shelf": list(shelf),
@@ -477,7 +480,8 @@ def build(*, zones: dict[str, N.ZoneRead], measured: dict[str, float] | None, ut
         "rule_versions": {"basket": RULE_VERSION, "needs": N.RULE_VERSION, "undertone": U.RULE_VERSION,
                           "cartcheck": CC.RULE_VERSION, "patterns": P.RULE_VERSION,
                           "families": P.FAM.FAMILIES_VERSION, "chips": CH.RULE_VERSION,
-                          "lookfor": LF.RULE_VERSION, "startplan": SP.RULE_VERSION},
+                          "lookfor": LF.RULE_VERSION, "startplan": SP.RULE_VERSION,
+                          "findings": F.RULE_VERSION},
         "chips": [c.to_dict() for c in chip_objs], "beginner": beginner, "today": plan_["today"],
     }
     return Basket(fm, jobs_out, skipped, owned_out, total, next_step, tryon, inputs,

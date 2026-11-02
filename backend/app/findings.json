@@ -1,0 +1,18 @@
+{
+  "version": "findings-1.0",
+  "note": "What the scan found, in words. One line per concern YouCam measured, banded from its raw_score. Raw values are read here and never shown: no numbers, scores or points reach the screen.",
+  "direction_note": "YouCam raw_score is 1-100 and higher for healthier-looking skin on every concern (app/evidence.py MOVE_WORDS, needs.json concern_threshold_note). So for redness, acne, pore and oiliness a higher value means LESS of it; for moisture, radiance and texture a higher value means MORE of it (or smoother). Each concern's `higher_means` says which.",
+  "bands_note": "Three bands per concern. `low` starts at 60 so it lines up with needs.json concern_threshold: a concern in the low band is the one that adds a need to the basket. `high` is 80 and above.",
+  "bands": {"high": 80, "low": 60},
+  "measured_by": "Measured by YouCam AI Skin Analysis",
+  "order": ["acne", "pore", "redness", "oiliness", "moisture", "texture", "radiance"],
+  "concerns": {
+    "acne":     {"higher_means": "fewer breakouts",       "high": "Blemishes: hardly any",     "mid": "Blemishes: a few",            "low": "Breakouts: noticeable"},
+    "pore":     {"higher_means": "less visible pores",    "high": "Pores: barely visible",     "mid": "Pores: somewhat visible",     "low": "Pores: more visible"},
+    "redness":  {"higher_means": "less redness",          "high": "Redness: very little",      "mid": "Redness: mild",               "low": "Redness: noticeable"},
+    "oiliness": {"higher_means": "less shine",            "high": "Oiliness: little shine",    "mid": "Oiliness: some shine",        "low": "Oiliness: shiny"},
+    "moisture": {"higher_means": "more moisture",         "high": "Moisture: well hydrated",   "mid": "Moisture: fair",              "low": "Moisture: on the low side"},
+    "texture":  {"higher_means": "a smoother surface",    "high": "Texture: smooth",           "mid": "Texture: mostly smooth",      "low": "Texture: uneven"},
+    "radiance": {"higher_means": "more glow",             "high": "Radiance: bright",          "mid": "Radiance: even",              "low": "Radiance: on the dull side"}
+  }
+}

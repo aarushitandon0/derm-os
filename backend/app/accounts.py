@@ -14,6 +14,7 @@ import uuid
 from typing import Any
 
 from . import db as DBL
+from . import findings as FD
 
 # A key that names a picture or a link, or a value that is one, never reaches the database.
 _BANNED_KEY = re.compile(r"photo|image|selfie|img|url|mask|render|file_id|src_file|thumbnail|avatar", re.I)
@@ -207,7 +208,9 @@ def list_scans(uid: str) -> list[dict]:
                            (uid,)).fetchall()
     return [{"id": r[0], "created_at": DBL.ts(r[1]), "zone_types": DBL.loads(r[2]),
              "concern_values": DBL.loads(r[3]), "undertone": r[4], "undertone_method": r[5],
-             "engine_versions": DBL.loads(r[6])} for r in rows]
+             "engine_versions": DBL.loads(r[6]),
+             # The same "What your scan found" lines as the face map, from the saved values.
+             "findings": FD.from_saved(DBL.loads(r[2]), DBL.loads(r[3]))} for r in rows]
 
 
 # ---------------------------------------------------------------- saved baskets

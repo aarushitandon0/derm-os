@@ -4608,3 +4608,58 @@ button,
   align-items: flex-start;
   margin-top: 8px;
 }
+
+/* "What your scan found" (components/FaceMap.tsx ScanFindingsBlock): words only. */
+.findings {
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--raised);
+}
+.findings__title {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.findings__list {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.findings__line {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 14px;
+  color: var(--ink);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.findings__need {
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+.findings__need--link {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--ink-2);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+.findings__doc {
+  font-size: 12.5px;
+  color: var(--ink-3);
+}

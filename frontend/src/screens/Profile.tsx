@@ -4,6 +4,7 @@ import { ACCOUNT } from "../accountCopy";
 import { isLoggedOut, meApi, type Profile as ProfileData, type SavedBasket, type SavedChip, type SavedRecord, type SavedScan } from "../api";
 import { accountError, AuthForm, NewPassword } from "../components/Account";
 import { StartPlanCard } from "../components/BasketExtras";
+import { ScanFindingsBlock } from "../components/FaceMap";
 import { Btn, Loading, NavBar, Notice, PageHead, Section } from "../components/ui";
 import { fmtDate, inr, NOT_DIAGNOSIS, RECORD } from "../copy";
 import { go } from "../router";
@@ -249,6 +250,7 @@ export default function Profile() {
                         Undertone: {s.undertone} ({s.undertone_method})
                       </p>
                     )}
+                    <ScanFindingsBlock findings={s.findings} />
                   </li>
                 ))}
               </ul>

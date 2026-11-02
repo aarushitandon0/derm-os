@@ -15,7 +15,7 @@ import { ACCOUNTS_ENABLED, useAccount } from "../account";
 import { ACCOUNT } from "../accountCopy";
 import { BASKET } from "../basketCopy";
 import { DEMO_DATA_TAG, inr, NOT_DIAGNOSIS, RECORD } from "../copy";
-import { FaceMap } from "../components/FaceMap";
+import { FaceMap, ScanFindingsBlock } from "../components/FaceMap";
 import { artFor, ProductArt } from "../components/ProductArt";
 import { Icon } from "../components/Icon";
 import { Btn, IncompleteTag, Loading, NavBar, Notice, PageHead, RowLink, Section } from "../components/ui";
@@ -324,13 +324,14 @@ export default function Basket({ autoDemo = null }: { autoDemo?: string | null }
       <aside className="bresult__map" aria-label={BASKET.faceMapLabel}>
         <PageHead eyebrow={BASKET.usp} title={BASKET.faceMapLabel} lede={fm.needs_line} />
         <FaceMap map={fm} />
-        {fm.see_doctor && <p className="small">{fm.see_doctor}</p>}
+        <ScanFindingsBlock findings={fm.findings} linkTo="basket-cards" demo={fm.demo || basket.source === "replay"} />
+        {fm.see_doctor && !fm.findings?.lines.some((l) => l.see_doctor) && <p className="small">{fm.see_doctor}</p>}
         <p className="small muted">{fm.undertone.note}</p>
       </aside>
 
       <div className="bresult__main">
       <Section label={BASKET.basketLabel} aside={<span className="small">{BASKET.total}: {inr(basket.total_inr)}</span>}>
-        <ul className="bcards">
+        <ul className="bcards" id="basket-cards">
           {basket.jobs.map((j) => (
             <JobCard key={`${j.job}-${j.zone}`} job={j} />
           ))}

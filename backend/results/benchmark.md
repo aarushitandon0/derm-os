@@ -1,6 +1,6 @@
 # derm//os evidence benchmark
 
-**235 of 235 cases pass.**
+**238 of 238 cases pass.**
 
 Written and run by the derm//os team, so this is **not an independent evaluation**. Each case has an expected output written from the design doc before the engine was run. It shows the decision and evidence rules behave as designed; it says nothing about how accurate YouCam's skin scores are. No YouCam calls, no units spent. The LLM cases use a scripted stand-in provider (no network): they test the fallback and the claim validator, not any real model.
 
@@ -37,6 +37,7 @@ Run: `cd backend; python -m benchmark` (also runs under `python -m pytest`).
 | The demo personas produce the expected outcomes, from the real engines | 17 / 17 |
 | Basket: zone split, finish, history skips, unknown labels, owned, shade, wording | 15 / 15 |
 | History by ingredient, start plan, what to look for, paste check | 10 / 10 |
+| What your scan found: one word band per measured concern, direction per concern | 3 / 3 |
 
 ## All cases
 
@@ -419,4 +420,12 @@ Run: `cd backend; python -m benchmark` (also runs under `python -m pytest`).
 | ha-08 | Paste check: suspect repeats a pattern, clean has no conflicts, cut-off is unknown | pass |
 | ha-09 | One need per zone: normal cheeks with low moisture read hydration once | pass |
 | ha-10 | Beginner: gentle label on every card, no history step | pass |
+
+### What your scan found: one word band per measured concern, direction per concern
+
+| Case | Checks | Result |
+| --- | --- | --- |
+| sf-01 | High band: high raw values read as little of a problem, more of a quality | pass |
+| sf-02 | Middle band: 60 to under 80 reads as some, never a number | pass |
+| sf-03 | Low band: under 60 (the needs threshold) reads as more of a problem, less of a quality | pass |
 

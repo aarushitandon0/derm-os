@@ -1,5 +1,45 @@
-import type { FaceMapData } from "../api";
-import { ZONE_COLOUR, ZONE_KEY, ZONE_WORD } from "../basketCopy";
+import type { FaceMapData, ScanFindings } from "../api";
+import { BASKET, ZONE_COLOUR, ZONE_KEY, ZONE_WORD } from "../basketCopy";
+
+/**
+ * "What your scan found": one plain line per concern YouCam measured, banded on the server
+ * (app/findings.py). Words only. A concern that wasn't measured has no line. `linkTo` (an element id)
+ * scrolls each line's need to the basket cards; without it (a saved scan) the need is named, not linked.
+ */
+export function ScanFindingsBlock({ findings, linkTo, demo }: { findings?: ScanFindings | null; linkTo?: string; demo?: boolean }) {
+  if (!findings || findings.lines.length === 0) return null;
+  return (
+    <div className="findings">
+      <p className="findings__title">{BASKET.findingsLabel}</p>
+      <ul className="findings__list">
+        {findings.lines.map((l) => (
+          <li key={l.concern} className={`findings__line findings__line--${l.band}`}>
+            <span>{l.line}</span>
+            {l.need &&
+              (linkTo ? (
+                <button
+                  type="button"
+                  className="findings__need findings__need--link"
+                  onClick={() => document.getElementById(linkTo)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                >
+                  → {BASKET.findingsWhy} {l.need.line}
+                </button>
+              ) : (
+                <span className="findings__need">
+                  → {BASKET.findingsDrives} {l.need.line}
+                </span>
+              ))}
+            {l.see_doctor && <span className="findings__doc">{l.see_doctor}</span>}
+          </li>
+        ))}
+      </ul>
+      <p className="facemap__src">
+        {findings.label}
+        {demo ? " · demo data" : ""}
+      </p>
+    </div>
+  );
+}
 
 /**
  * A stylised face with the two zones coloured by type and labelled on the drawing, a colour key in

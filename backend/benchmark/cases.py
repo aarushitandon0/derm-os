@@ -1419,3 +1419,28 @@ CASES += [
          lambda: (lambda b: (b["beginner"], all(j.get("label") == BK.GENTLE_LABEL for j in b["jobs"]), b["tried"]["chips"]))(
              basket_of(answers={"history": "new"}, chips=RIYA_CHIPS, shelf=[]))),
 ]
+
+
+# ---- What your scan found (app/findings.py, findings-1.0). Expected words come from the
+# direction rule (raw_score higher = healthier-looking on every concern), not from a run.
+from app import findings as FND  # noqa: E402
+
+SCAN_FOUND = "What your scan found: one word band per measured concern, direction per concern"
+CATEGORIES.append(SCAN_FOUND)
+
+
+def _found(measured: dict) -> list[str]:
+    return [l["line"] for l in FND.lines(measured)]
+
+
+CASES += [
+    Case("sf-01", SCAN_FOUND, "High band: high raw values read as little of a problem, more of a quality",
+         ["Blemishes: hardly any", "Moisture: well hydrated"],
+         lambda: _found({"acne": 92.0, "moisture": 88.0})),
+    Case("sf-02", SCAN_FOUND, "Middle band: 60 to under 80 reads as some, never a number",
+         ["Pores: somewhat visible", "Texture: mostly smooth"],
+         lambda: _found({"pore": 60.0, "texture": 79.9})),
+    Case("sf-03", SCAN_FOUND, "Low band: under 60 (the needs threshold) reads as more of a problem, less of a quality",
+         ["Redness: noticeable", "Radiance: on the dull side"],
+         lambda: _found({"redness": 41.0, "radiance": 59.9})),
+]

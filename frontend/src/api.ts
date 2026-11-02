@@ -200,6 +200,19 @@ export interface Shade {
   undertone: string;
   hex: string;
 }
+/** "What your scan found" (backend app/findings.py, findings-1.0): words only, never a value. */
+export interface ScanFindingLine {
+  concern: string;
+  band: "high" | "mid" | "low";
+  line: string;
+  need: { key: string; line: string; targets: string[] } | null;
+  see_doctor: string | null;
+}
+export interface ScanFindings {
+  lines: ScanFindingLine[];
+  label: string;
+  rule_version: string;
+}
 export interface FaceMapData {
   zones: ZoneRead[];
   same_type: boolean;
@@ -210,6 +223,7 @@ export interface FaceMapData {
   source: "face" | "answers";
   label: string;
   demo: boolean;
+  findings?: ScanFindings | null;
 }
 export interface BasketWhy {
   key: "face" | "history" | "finish" | "shelf";
@@ -1011,6 +1025,7 @@ export interface SavedScan {
   undertone: string | null;
   undertone_method: string | null;
   engine_versions: Record<string, string>;
+  findings?: ScanFindings | null;
 }
 
 /** The saved ids kept for one basket. Clinician-confirmed items are always kept by the server. */

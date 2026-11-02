@@ -338,6 +338,8 @@ export interface Basket {
   source: "live" | "replay";
   demo_label?: string;
   notice?: string | null;
+  /** Built from a logged-in user's saved history and shelf. */
+  from_profile?: boolean;
   face_map: FaceMapData;
   jobs: BasketJob[];
   skipped: BasketSkip[];
@@ -1011,6 +1013,13 @@ export interface SavedScan {
   engine_versions: Record<string, string>;
 }
 
+/** The saved ids kept for one basket. Clinician-confirmed items are always kept by the server. */
+export interface ProfileUse {
+  chips: string[];
+  records: string[];
+  shelf: string[];
+}
+
 /** Server asleep or briefly down (a free host's cold start): not the same as being logged out. */
 export const isWaking = (e: unknown) => e instanceof ApiError && [0, 502, 503, 504].includes(e.status);
 export const isLoggedOut = (e: unknown) => e instanceof ApiError && e.status === 401;
@@ -1038,6 +1047,17 @@ export const meApi = {
   shelf: (t: string) => call<{ product_ids: string[] }>("/api/me/shelf", auth(t)),
   setShelf: (t: string, ids: string[]) =>
     call<{ product_ids: string[] }>("/api/me/shelf", auth(t, json("PUT", { product_ids: ids }))),
+  /** A logged-in basket on the prepared face, from the answers and the saved items kept for it. */
+  basket: (t: string, b: { answers: Record<string, string>; use: ProfileUse; update_profile: boolean }) =>
+    call<Basket>("/api/me/basket", auth(t, json("POST", { ...b, persona: "riya" }))),
+  /** A selfie, logged in: the same as api.basketScan, with the user's own history. */
+  basketScan: (t: string, image: File, answers: Record<string, string>, use: ProfileUse) => {
+    const f = new FormData();
+    f.append("image", image, image.name || "selfie.jpg");
+    f.append("answers", JSON.stringify(answers));
+    f.append("profile", JSON.stringify(use));
+    return call<Basket>("/api/basket/scan", auth(t, { method: "POST", body: f }));
+  },
   baskets: (t: string) => call<SavedBasket[]>("/api/me/baskets", auth(t)),
   saveBasket: (t: string, basketId: string) =>
     call<SavedBasket>("/api/me/baskets", auth(t, json("POST", { basket_id: basketId }))),

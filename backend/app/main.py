@@ -1234,9 +1234,9 @@ class PasteCheckIn(BaseModel):
 def paste_check(body: PasteCheckIn):
     """A pasted ingredient list, checked like the shop's own stock. Nothing is stored. The face map
     and finish come from the basket named (or the latest one), so zone fit reads your own zones."""
-    row = get("baskets", body.basket_id) if body.basket_id else None
+    row = _guest_basket(body.basket_id)
     if row is None:
-        rows = sorted(all_("baskets"), key=lambda r: r.get("taken_at") or "")
+        rows = sorted((r for r in all_("baskets") if not r.get("owner")), key=lambda r: r.get("taken_at") or "")
         row = rows[-1] if rows else None
     zones = measured = goal = None
     if row:
@@ -1253,32 +1253,51 @@ def paste_check(body: PasteCheckIn):
 
 def _basket_from(skin_payload, tone_payload, answers: dict, *, demo_: bool, source: str,
                  src_file_id: str | None = None, renders: dict | None = None,
-                 extra: dict | None = None) -> dict:
-    """Payloads of the documented shapes -> face map, basket and try-on. Stored with its inputs."""
+                 extra: dict | None = None, account: tuple[str, dict] | None = None) -> dict:
+    """Payloads of the documented shapes -> face map, basket and try-on. Stored with its inputs.
+    `account` = (user id, AC.basket_history(...)): the basket reads that user's own history and
+    shelf instead of the guest ones, and the stored row is marked as theirs (guest reads skip it)."""
     zones = ND.read_zones(skin_payload, answers)
     measured = normalize(skin_payload, "sd", DF.BASKET_ACTIONS).raw_scores() if skin_payload else {}
     ut = UT.from_payload(tone_payload, answers)
+    if account:
+        uid, h = account
+        hist = {"records": h["records"], "outcomes": [], "shelf": h["shelf"], "chips": h["chips"],
+                "always": h["always"]}
+    else:
+        hist = {"records": _records(), "outcomes": _outcomes(), "shelf": get_shelf()["product_ids"],
+                "chips": _chip_rows(), "always": None}
     b = BK.build(zones=zones, measured=measured, ut=ut, answers=answers, stock=PRD.shop_tags(),
-                 catalog=CATALOG, records=_records(), outcomes=_outcomes(),
-                 shelf=get_shelf()["product_ids"], demo=demo_, src_file_id=src_file_id,
-                 chips=_chip_rows())
+                 catalog=CATALOG, demo=demo_, src_file_id=src_file_id, **hist)
     out = b.to_dict()
     if renders:
         out["tryon"]["looks"] = [{**lk, "image": renders.get(lk["look"])} for lk in out["tryon"]["looks"]]
         if all(lk["image"] for lk in out["tryon"]["looks"]):
             out["tryon"].update(status="ready", line=None)
     row = put("baskets", {"source": source, "demo": demo_, "basket": out,
-                          "taken_at": datetime.now(timezone.utc).isoformat(), **(extra or {})})
-    return {**out, "id": row["id"], "source": source}
+                          "taken_at": datetime.now(timezone.utc).isoformat(), **(extra or {}),
+                          **({"owner": account[0]} if account else {})})
+    res = {**out, "id": row["id"], "source": source}
+    if account:
+        res["from_profile"] = True
+    return res
 
 
-def _replay_basket(persona: str, answers: dict, reason: str | None, notice: str | None = None) -> dict:
+def _guest_basket(bid: str | None) -> dict | None:
+    """A basket row any visitor may read: never one built from an account's history."""
+    row = get("baskets", bid) if bid else None
+    return None if row is None or row.get("owner") else row
+
+
+def _replay_basket(persona: str, answers: dict, reason: str | None, notice: str | None = None,
+                   account: tuple[str, dict] | None = None) -> dict:
     face = DF.load_face(persona)
     if face is None:
         raise HTTPException(404, f"No demo face for persona {persona!r}.")
     res = _basket_from(face["skin"], face["tone"], answers, demo_=True, source="replay",
                        renders=face.get("renders"),
-                       extra={"replay": {"persona": persona, "synthetic": face["synthetic"], "reason": reason}})
+                       extra={"replay": {"persona": persona, "synthetic": face["synthetic"], "reason": reason}},
+                       account=account)
     res["demo_label"] = face["label"]
     res["notice"] = notice
     return res
@@ -1308,7 +1327,7 @@ def _has_undertone_answer(answers: dict) -> bool:
     return answers.get("undertone") in UT.FAMILIES or answers.get("veins") in UT.VEINS
 
 
-def _live_basket(prep: Prepared, answers: dict) -> dict | None:
+def _live_basket(prep: Prepared, answers: dict, account: tuple[str, dict] | None = None) -> dict | None:
     """One live run, cheapest refusal first: skin tone, then skin analysis (skin_type + 7
     concerns), then two try-on renders. Returns a "_replay" marker when the balance floor or the
     judge caps say no.
@@ -1363,7 +1382,7 @@ def _live_basket(prep: Prepared, answers: dict) -> dict | None:
         spent += skin_cost
         task_ids.append(skin.task_id)
         tone_raw = tone.raw if tone else None
-        first = _basket_from(skin.raw, tone_raw, answers, demo_=False, source="live")
+        first = _basket_from(skin.raw, tone_raw, answers, demo_=False, source="live", account=account)
         renders: dict[str, str] = {}
         cap_id = first["id"]
         shade = (first["tryon"] or {}).get("shade")
@@ -1397,7 +1416,7 @@ def _live_basket(prep: Prepared, answers: dict) -> dict | None:
     delete("baskets", first["id"])
     out = _basket_from(skin.raw, tone_raw, answers, demo_=False, source="live", renders=renders,
                        extra={"youcam": {"task_ids": task_ids, "deleted": all(deleted), "cost_units": spent,
-                                         "tone": tone_info}})
+                                         "tone": tone_info}}, account=account)
     if tryon_failed and out["tryon"].get("status") != "ready":
         out["tryon"]["line"] = TRYON_FAILED_LINE
     out["notice"] = notice
@@ -1431,8 +1450,9 @@ async def basket_precheck(request: Request, image: UploadFile = File(...),
 async def basket_scan(request: Request, image: UploadFile | None = File(None),
                       answers: str = Form("{}"), persona: str = Form("riya"),
                       yaw: float | None = Form(None), pitch: float | None = Form(None),
-                      roll: float | None = Form(None),
-                      x_live_passcode: str | None = Header(None)):
+                      roll: float | None = Form(None), profile: str = Form(""),
+                      x_live_passcode: str | None = Header(None),
+                      authorization: str | None = Header(None)):
     """A selfie -> face map + basket + try-on. Live only with DEMO_MODE=0 and the passcode; any
     other case replays the demo persona's prepared face, labelled, and never calls YouCam.
     A live photo passes the free precheck (app/pose.py) before any unit is spent."""
@@ -1444,9 +1464,14 @@ async def basket_scan(request: Request, image: UploadFile | None = File(None),
     except ValueError:
         raise HTTPException(422, "answers must be a JSON object")
     ans = {**(DF.load_face(persona) or {}).get("answers", {}), **{k: str(v) for k, v in ans.items()}}
+    account = None
+    if profile:  # a logged-in basket: the user's own history, never a demo persona's
+        uid = AU.current_user(authorization)
+        account = (uid, AC.basket_history(uid, _profile_use(profile)))
+        ans = {k: str(v) for k, v in json.loads(answers or "{}").items()}  # no persona answers
     want, reason = G.scan_source(x_live_passcode)
     if want != "live" or image is None:
-        return _replay_basket(persona, ans, reason or "no_photo")
+        return _replay_basket(persona, ans, reason or "no_photo", account=account)
     raw = await image.read()
     try:
         prep = _prepare(raw, "sd", None, "upload", yaw, pitch, roll)
@@ -1456,13 +1481,13 @@ async def basket_scan(request: Request, image: UploadFile | None = File(None),
         chk = _photo_check(prep)
         if not chk["ok"]:
             raise HTTPException(422, {"code": chk["code"], "message": chk["message"]})
-        res = _live_basket(prep, ans)
+        res = _live_basket(prep, ans, account)
     except YouCamError as e:
         raise HTTPException(503, e.friendly)
     finally:
         prep.cleanup()
     if res and "_replay" in res:
-        return _replay_basket(persona, ans, res["_replay"], res["_notice"])
+        return _replay_basket(persona, ans, res["_replay"], res["_notice"], account=account)
     return res
 
 
@@ -1638,7 +1663,7 @@ def me_save_basket(body: SaveBasketIn, uid: str = Depends(AU.current_user)):
     """Save the basket the user was looking at. A prepared demo basket is saved labelled as demo
     data and adds no scan: only a scan of the user's own face becomes a scan row."""
     row = get("baskets", body.basket_id)
-    if row is None:
+    if row is None or row.get("owner") not in (None, uid):  # someone else's profile basket: not found
         raise HTTPException(404, "That basket isn't on the server any more. Build it again, then save.")
     is_demo = bool(row.get("demo")) or row.get("source") == "replay"
     saved = AC.save_basket(uid, {**row["basket"], "source": row.get("source")}, is_demo)
@@ -1660,6 +1685,47 @@ def me_delete_basket(bid: str, uid: str = Depends(AU.current_user)):
     if not AC.delete_basket(uid, bid):
         raise HTTPException(404, "Not one of your saved baskets.")
     return {"deleted": bid}
+
+
+class ProfileUseIn(BaseModel):
+    """The saved ids kept for this one basket. A missing list keeps them all."""
+    chips: list[str] | None = Field(None, max_length=100)
+    records: list[str] | None = Field(None, max_length=200)
+    shelf: list[str] | None = Field(None, max_length=100)
+
+
+class MeBasketIn(BaseModel):
+    answers: dict[str, str] = {}
+    persona: Literal["riya", "beginner"] = "riya"  # the prepared face only, never its history
+    use: ProfileUseIn = Field(default_factory=ProfileUseIn)
+    update_profile: bool = False
+
+
+def _profile_use(raw: str) -> dict:
+    try:
+        return ProfileUseIn.model_validate_json(raw).model_dump()
+    except ValueError:
+        raise HTTPException(422, "profile must be a JSON object of saved ids")
+
+
+def _profile_from_answers(uid: str, answers: dict) -> dict:
+    """"Update my profile too": this basket's finish, budget and beginner answers become the profile's."""
+    p, _ = AC.ensure_profile(uid)
+    finish = answers.get("finish") if answers.get("finish") in AC.FINISHES else p["finish_goal"]
+    budget = answers.get("budget") if answers.get("budget") in AC.BUDGETS else p["budget"]
+    beginner = answers["history"] == "new" if answers.get("history") in ("new", "use") else p["beginner"]
+    return AC.set_profile(uid, p["display_name"], finish, budget, beginner)
+
+
+@app.post("/api/me/basket")
+def me_basket_build(body: MeBasketIn, uid: str = Depends(AU.current_user)):
+    """A logged-in basket on a prepared face: the answers the user confirmed (pre-filled from the
+    profile) and their own history and shelf. The profile changes only with update_profile."""
+    answers = {k: str(v) for k, v in body.answers.items()}
+    if body.update_profile:
+        _profile_from_answers(uid, answers)
+    return _replay_basket(body.persona, answers, "no_photo",
+                          account=(uid, AC.basket_history(uid, body.use.model_dump())))
 
 
 @app.get("/api/me/scans")

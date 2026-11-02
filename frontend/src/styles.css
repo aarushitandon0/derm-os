@@ -4588,3 +4588,23 @@ button,
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 }
+
+/* A logged-in basket: what came from the saved profile. */
+.tag--profile {
+  background: #e4ece2;
+  color: #2f4a2c;
+}
+.profileitems {
+  margin: 0 0 12px;
+}
+.profileitems .checkrow {
+  margin: 0;
+}
+.profileitems__from,
+.updateprofile__help {
+  display: block;
+}
+.updateprofile {
+  align-items: flex-start;
+  margin-top: 8px;
+}

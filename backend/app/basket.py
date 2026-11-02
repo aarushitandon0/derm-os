@@ -311,9 +311,10 @@ def build(*, zones: dict[str, N.ZoneRead], measured: dict[str, float] | None, ut
           answers: dict, stock: dict[str, dict], catalog: dict[str, D.Product],
           records: list[D.HistoryRecord], outcomes: list[ProductOutcome], shelf: list[str],
           demo: bool = False, src_file_id: str | None = None, chips: list | None = None,
-          today: date | None = None) -> Basket:
+          today: date | None = None, always: list[D.HistoryRecord] | None = None) -> Basket:
     """The whole basket. `stock` is the shop's tags by product id (app/products.shop_tags).
-    `chips` is the quick history by ingredient (app/chips.py); `today` dates the start plan."""
+    `chips` is the quick history by ingredient (app/chips.py); `today` dates the start plan.
+    `always`: clinician-confirmed records from an account, applied even when history is skipped."""
     answers = dict(answers or {})
     finish, fspec = N.finish_spec(answers.get("finish"))
     use_history = answers.get("history", "use") != "ignore"
@@ -322,7 +323,7 @@ def build(*, zones: dict[str, N.ZoneRead], measured: dict[str, float] | None, ut
     cap = BUDGETS.get(answers.get("budget") or "any")
     chip_objs = CH.parse_all(chips) if use_history and not beginner else []
     # A clinician-confirmed chip becomes the existing hard-block record type, nothing new.
-    recs = (list(records) + CH.records_from(chip_objs)) if use_history else []
+    recs = ((list(records) + CH.records_from(chip_objs)) if use_history else []) + list(always or [])
     outs = list(outcomes) if use_history else []
     reports = P.run_both(outs, catalog)
     suspects = {s.ingredient for r in reports.values() for s in r.suspects if s.tier == P.Tier.SUSPECT.value}
@@ -375,7 +376,7 @@ def build(*, zones: dict[str, N.ZoneRead], measured: dict[str, float] | None, ut
         for pid, tags in sorted(stock.items()):
             if tags.get("job") != job.job or pid not in catalog:
                 continue
-            c = _consider(catalog[pid], tags, job, chk=chk(pid) if use_history else None, finish=finish,
+            c = _consider(catalog[pid], tags, job, chk=chk(pid) if use_history or always else None, finish=finish,
                           fspec=fspec, ut=ut, zones_line=_zone_phrase(job, zones), targets=targets,
                           cap=cap, avoid=avoid, chips=chip_objs)
             if pid in shelf and not c.reasons:

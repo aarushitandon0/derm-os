@@ -1,13 +1,26 @@
 import { useEffect, useRef, useState } from "react";
-import { api, assetUrl, type Basket as BasketData, type BasketJob, type BasketQuestion } from "../api";
+import {
+  api,
+  assetUrl,
+  meApi,
+  type Basket as BasketData,
+  type BasketJob,
+  type BasketQuestion,
+  type Profile as ProfileData,
+  type ProfileUse,
+  type SavedChip,
+  type SavedRecord,
+} from "../api";
+import { ACCOUNTS_ENABLED, useAccount } from "../account";
+import { ACCOUNT } from "../accountCopy";
 import { BASKET } from "../basketCopy";
-import { DEMO_DATA_TAG, inr, NOT_DIAGNOSIS } from "../copy";
+import { DEMO_DATA_TAG, inr, NOT_DIAGNOSIS, RECORD } from "../copy";
 import { FaceMap } from "../components/FaceMap";
 import { artFor, ProductArt } from "../components/ProductArt";
 import { Icon } from "../components/Icon";
 import { Btn, IncompleteTag, Loading, NavBar, Notice, PageHead, RowLink, Section } from "../components/ui";
 import { ChipsPicker, LookFor, PasteCheck, StartPlanCard } from "../components/BasketExtras";
-import { SaveBasketCard } from "../components/Account";
+import { accountError, SaveBasketCard } from "../components/Account";
 import { KEYS, writeLocal } from "../local";
 import { href } from "../router";
 import { useStore } from "../store";
@@ -32,6 +45,51 @@ export default function Basket({ autoDemo = null }: { autoDemo?: string | null }
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const demo = !!health?.demo_mode;
+  // Logged in: the questions start from the saved profile. Changes stay with this basket unless
+  // "Update my profile too" is ticked. Riya and Beginner stay demo personas: they never read it.
+  const acct = useAccount();
+  const loggedIn = ACCOUNTS_ENABLED && !!acct.session;
+  const [mine, setMine] = useState<MyProfile | null>(null);
+  const [prefilled, setPrefilled] = useState<Record<string, string>>({});
+  const [use, setUse] = useState<ProfileUse>({ chips: [], records: [], shelf: [] });
+  const [updateProfile, setUpdateProfile] = useState(false);
+
+  const [loadingMine, setLoadingMine] = useState(false);
+  const startFromProfile = async (selfie: File | null) => {
+    setBusy(true);
+    setLoadingMine(true);
+    setErr(null);
+    try {
+      const t = await acct.token();
+      if (!t) throw new Error(ACCOUNT.loggedOut);
+      const [me, h, sh] = await Promise.all([meApi.get(t), meApi.history(t), meApi.shelf(t)]);
+      const p = me.profile;
+      const pre: Record<string, string> = { history: p.beginner ? "new" : "use" };
+      if (p.finish_goal) pre.finish = p.finish_goal;
+      if (p.budget) pre.budget = p.budget;
+      setMine({
+        profile: p,
+        chips: h.chips,
+        records: h.records,
+        shelf: sh.product_ids,
+        chipLabel: Object.fromEntries(h.catalogue.map((c) => [c.id, c.label])),
+        reactions: h.reactions,
+      });
+      setPrefilled(pre);
+      setAnswers({ finish: "dewy", budget: "any", ...pre });
+      setUse({ chips: h.chips.map((c) => c.id), records: h.records.map((r) => r.id), shelf: sh.product_ids });
+      setUpdateProfile(false);
+      setPersona("riya");
+      setDemoFace(!selfie);
+      setPhoto(selfie);
+      setStep("questions");
+    } catch (e) {
+      setErr(accountError(e));
+    } finally {
+      setBusy(false);
+      setLoadingMine(false);
+    }
+  };
 
   useEffect(() => {
     if (step !== "questions") return;
@@ -49,6 +107,7 @@ export default function Basket({ autoDemo = null }: { autoDemo?: string | null }
     setErr(null);
     try {
       writeLocal(KEYS.onboarded, true);
+      setMine(null);
       // Riya: her saved history, chips and shelf. Beginner: the scene clears the demo history first,
       // so nothing from an earlier take leaks into a "nothing tried yet" basket.
       if (health?.server_demo_mode !== false) {
@@ -84,8 +143,16 @@ export default function Basket({ autoDemo = null }: { autoDemo?: string | null }
     setBusy(true);
     setErr(null);
     try {
-      const b =
-        demoFace || !photo ? await api.basket(answers, persona) : await api.basketScan(photo, answers, persona);
+      let b: BasketData;
+      if (mine) {
+        const t = await acct.token();
+        if (!t) throw new Error(ACCOUNT.loggedOut);
+        if (photo && !demoFace) {
+          if (updateProfile) await meApi.setProfile(t, profileFrom(mine.profile, answers));
+          b = await meApi.basketScan(t, photo, answers, use);
+        } else b = await meApi.basket(t, { answers, use, update_profile: updateProfile });
+      } else
+        b = demoFace || !photo ? await api.basket(answers, persona) : await api.basketScan(photo, answers, persona);
       setBasket(b);
       setStep("result");
       window.scrollTo(0, 0);
@@ -107,6 +174,14 @@ export default function Basket({ autoDemo = null }: { autoDemo?: string | null }
           <div className="split__main">
         <Section label={BASKET.startTitle}>
           <div className="choices">
+            {loggedIn && (
+              <RowLink
+                icon="search"
+                title={ACCOUNT.fromProfileRow}
+                sub={ACCOUNT.fromProfileRowSub}
+                onClick={() => startFromProfile(null)}
+              />
+            )}
             <RowLink icon="search" title={BASKET.demoFace} sub={BASKET.demoFaceSub} onClick={() => useDemoFace("riya")} />
             <RowLink
               icon="search"
@@ -123,6 +198,8 @@ export default function Basket({ autoDemo = null }: { autoDemo?: string | null }
                   accept="image/jpeg,image/png"
                   onChange={(e) => {
                     const f = e.target.files?.[0] ?? null;
+                    if (f && loggedIn) return void startFromProfile(f);
+                    setMine(null);
                     setPhoto(f);
                     setDemoFace(false);
                     if (f) setStep("questions");
@@ -133,7 +210,7 @@ export default function Basket({ autoDemo = null }: { autoDemo?: string | null }
           </div>
           {demo && <p className="small muted">{BASKET.demoNote}</p>}
         </Section>
-        {busy && <Loading label="Loading the demo history" />}
+        {busy && <Loading label={loadingMine ? ACCOUNT.loadingProfile : "Loading the demo history"} />}
         {err && <Notice tone="stop">{err}</Notice>}
           </div>
         </div>
@@ -165,7 +242,15 @@ export default function Basket({ autoDemo = null }: { autoDemo?: string | null }
           {questions.map((q) => (
             <Section key={q.id} label={q.text} className={`qgrid__item qgrid__item--${q.id}`}>
               <p className="formhelp">{q.why}</p>
-              {q.id === "history" && onRecord && (
+              {mine && prefilled[q.id] !== undefined && (
+                <p className={`tag ${answers[q.id] === prefilled[q.id] ? "tag--profile" : "tag--prepared"}`}>
+                  {answers[q.id] === prefilled[q.id] ? ACCOUNT.fromProfile : ACCOUNT.changedHere}
+                </p>
+              )}
+              {q.id === "history" && mine && (
+                <ProfileItems mine={mine} use={use} setUse={setUse} showHistory={answers.history !== "ignore"} />
+              )}
+              {q.id === "history" && !mine && onRecord && (
                 <p className="small">
                   {onRecord.outcomes || onRecord.records
                     ? `On record: ${onRecord.bothered} product${onRecord.bothered === 1 ? "" : "s"} that bothered you, ${
@@ -175,7 +260,7 @@ export default function Basket({ autoDemo = null }: { autoDemo?: string | null }
                   <a href={href("/history")}>Add or review</a>
                 </p>
               )}
-              {q.id === "history" && answers.history === "use" && (
+              {q.id === "history" && !mine && answers.history === "use" && (
                 <>
                   <p className="small">{BASKET.chipsHelp}</p>
                   <ChipsPicker />
@@ -197,6 +282,15 @@ export default function Basket({ autoDemo = null }: { autoDemo?: string | null }
             </Section>
           ))}
           </div>
+        )}
+        {mine && questions && (
+          <label className="checkrow updateprofile">
+            <input type="checkbox" checked={updateProfile} onChange={(e) => setUpdateProfile(e.target.checked)} />
+            <span>
+              {ACCOUNT.updateProfile}
+              <span className="small muted updateprofile__help">{ACCOUNT.updateProfileHelp}</span>
+            </span>
+          </label>
         )}
         {err && <Notice tone="stop">{err}</Notice>}
         <div className="actions actions--bar">
@@ -224,6 +318,7 @@ export default function Basket({ autoDemo = null }: { autoDemo?: string | null }
       {(fm.demo || basket.source === "replay") && (
         <p className="tag tag--prepared">{basket.demo_label ?? DEMO_DATA_TAG} · fictional shop and products</p>
       )}
+      {basket.from_profile && <p className="tag tag--profile">{ACCOUNT.builtFromProfile}</p>}
       {basket.notice && <Notice tone="warn">{basket.notice}</Notice>}
       <div className="bresult">
       <aside className="bresult__map" aria-label={BASKET.faceMapLabel}>
@@ -422,6 +517,87 @@ function TryOnView({ basket, onBack }: { basket: BasketData; onBack: () => void 
         )}
       </div>
       <p className="foot small">{NOT_DIAGNOSIS} Try-on by YouCam AI Makeup Virtual Try-On.</p>
+    </div>
+  );
+}
+
+interface MyProfile {
+  profile: ProfileData;
+  chips: SavedChip[];
+  records: SavedRecord[];
+  shelf: string[];
+  chipLabel: Record<string, string>;
+  reactions: Record<string, string>;
+}
+
+/** "Update my profile too": this basket's finish, budget and beginner answers, the rest as saved. */
+function profileFrom(p: ProfileData, a: Record<string, string>) {
+  return {
+    display_name: p.display_name,
+    finish_goal: (["dewy", "natural", "matte"].includes(a.finish) ? a.finish : p.finish_goal) as ProfileData["finish_goal"],
+    budget: (["under_700", "under_1000", "any"].includes(a.budget) ? a.budget : p.budget) as ProfileData["budget"],
+    beginner: a.history === "new" ? true : a.history === "use" ? false : p.beginner,
+  };
+}
+
+/** The saved history and shelf, each ticked: untick to leave it out of this basket only. A
+ *  clinician-confirmed item can't be unticked; the server keeps it as a hard block either way. */
+function ProfileItems({
+  mine,
+  use,
+  setUse,
+  showHistory,
+}: {
+  mine: MyProfile;
+  use: ProfileUse;
+  setUse: (u: ProfileUse) => void;
+  showHistory: boolean;
+}) {
+  const { catalog } = useStore();
+  const name = (id: string | null) => (id && catalog[id] ? `${catalog[id].brand} ${catalog[id].name}` : id ?? "");
+  const toggle = (k: keyof ProfileUse, id: string, on: boolean) =>
+    setUse({ ...use, [k]: on ? [...use[k], id] : use[k].filter((x) => x !== id) });
+  const row = (k: keyof ProfileUse, id: string, label: string, locked: boolean) => (
+    <li key={`${k}-${id}`}>
+      <label className="checkrow">
+        <input
+          type="checkbox"
+          checked={locked || use[k].includes(id)}
+          disabled={locked}
+          onChange={(e) => toggle(k, id, e.target.checked)}
+        />
+        <span>
+          {label}
+          <span className="small muted profileitems__from">
+            {locked ? ACCOUNT.alwaysKept : ACCOUNT.fromProfile}
+          </span>
+        </span>
+      </label>
+    </li>
+  );
+  const history = showHistory && (mine.chips.length > 0 || mine.records.length > 0);
+  if (!history && !mine.shelf.length) return <p className="small">{ACCOUNT.noHistory} <a href={href("/profile")}>{ACCOUNT.profile}</a></p>;
+  return (
+    <div className="profileitems">
+      {history && (
+        <>
+          <p className="small">{ACCOUNT.profileItemsHelp}</p>
+          <ul className="editlist">
+            {mine.chips.map((c) =>
+              row("chips", c.id, `${mine.chipLabel[c.chip] ?? c.chip}: ${mine.reactions[c.reaction] ?? c.reaction}`, c.clinician_confirmed)
+            )}
+            {mine.records.map((r) =>
+              row("records", r.id, `${RECORD[r.type].short}: ${r.ingredient ?? name(r.product_id)}`, r.clinician_confirmed)
+            )}
+          </ul>
+        </>
+      )}
+      {mine.shelf.length > 0 && (
+        <>
+          <h3 className="profile__sub">{ACCOUNT.youOwn}</h3>
+          <ul className="editlist">{mine.shelf.map((id) => row("shelf", id, name(id), false))}</ul>
+        </>
+      )}
     </div>
   );
 }

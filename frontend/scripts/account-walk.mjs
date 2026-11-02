@@ -162,6 +162,40 @@ for (const [w, h, touch] of SIZES) {
     if (a.small.length) fail(`${tag} small tap targets: ${a.small.join("; ")}`);
     await page.screenshot({ path: join(OUT, `21-profile-${w}.png`), fullPage: true });
 
+    // A logged-in basket starts from the saved profile: answers and items labelled "from your profile".
+    const seeded = await page.evaluate(async ([t]) => {
+      const h = { "Content-Type": "application/json", Authorization: `Bearer ${t}` };
+      const put = (u, b, m = "PUT") => fetch(u, { method: m, headers: h, body: JSON.stringify(b) }).then((r) => r.status);
+      const cat = await fetch("/api/catalog").then((r) => r.json()).catch(() => null);
+      const first = Array.isArray(cat) ? cat[0]?.id : Object.keys(cat?.products ?? cat ?? {})[0];
+      return [
+        await put("/api/me/profile", { display_name: "Walk", finish_goal: "matte", budget: "under_1000", beginner: false }),
+        await put("/api/me/history", { type: "avoid", ingredient: "menthol", note: "", clinician_confirmed: true }, "POST"),
+        first ? await put("/api/me/shelf", { product_ids: [first] }) : 0,
+      ];
+    }, [access]);
+    if (seeded.some((s) => s !== 200)) fail(`${tag} seeding the profile answered ${seeded.join(",")}`);
+    await page.goto(`${base}/#/basket`);
+    await page.click("text=Build from my profile");
+    await page.waitForSelector("[role=radiogroup]");
+    const fromProfile = await page.locator("text=from your profile").count();
+    const locked = await page.locator(".profileitems input:disabled").count();
+    if (fromProfile < 3) fail(`${tag} expected "from your profile" on the answers, saw ${fromProfile}`);
+    if (locked !== 1) fail(`${tag} expected the doctor-confirmed note locked, saw ${locked}`);
+    const qa = await page.evaluate(audit, touch);
+    if (qa.scroll) fail(`${tag} profile questions sideways scroll`);
+    if (qa.small.length) fail(`${tag} profile questions small tap targets: ${qa.small.join("; ")}`);
+    await page.screenshot({ path: join(OUT, `22-basket-from-profile-${w}.png`), fullPage: true });
+    await page.click(".btn >> text=Build my basket");
+    await page.waitForSelector(".bcards");
+    const built = await page.locator("text=Built from your profile").count();
+    if (!built) fail(`${tag} the basket isn't labelled "Built from your profile"`);
+    await page.click("text=Save this basket to your profile");
+    await page.waitForSelector("text=Saved to your profile");
+    const prof = await page.evaluate(([t]) => fetch("/api/me", { headers: { Authorization: `Bearer ${t}` } }).then((r) => r.json()), [access]);
+    if (prof.profile.finish_goal !== "matte") fail(`${tag} building the basket changed the profile`);
+    console.log(`${tag} profile basket: "from your profile" ${fromProfile}, locked doctor-confirmed ${locked}, built label ${built}`);
+
     const flowErrors = errors.length;
     // Without a token the account API answers 401, never someone else's data. (The browser logs
     // that 401 itself, so console errors are counted before this probe.)

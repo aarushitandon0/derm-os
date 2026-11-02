@@ -24,15 +24,38 @@ BUDGETS = ("under_700", "under_1000", "any")  # the basket's own (app/basket.py)
 PHOTO_LINE = "Your photo is never stored, only the results."
 
 
-def results_only(v: Any) -> Any:
-    """A copy with every picture, mask, render, link and file reference removed."""
+def results_only(v: Any, keep: frozenset[str] = frozenset()) -> Any:
+    """A copy with every picture, mask, render, link and file reference removed. `keep` is the
+    app's own curated source links (curated_links()): only those exact strings survive."""
     if isinstance(v, dict):
-        return {k: results_only(x) for k, x in v.items() if not _BANNED_KEY.search(str(k))}
+        return {k: results_only(x, keep) for k, x in v.items()
+                if not _BANNED_KEY.search(str(k)) or (isinstance(x, str) and x in keep)}
     if isinstance(v, list):
-        return [results_only(x) for x in v if not (isinstance(x, str) and _BANNED_VALUE.match(x))]
-    if isinstance(v, str) and _BANNED_VALUE.match(v):
+        return [results_only(x, keep) for x in v
+                if not (isinstance(x, str) and _BANNED_VALUE.match(x) and x not in keep)]
+    if isinstance(v, str) and _BANNED_VALUE.match(v) and v not in keep:
         return None
     return v
+
+
+# A link to YouCam, to a stored file or to a picture is never kept, even if listed in the data.
+_NEVER_LINK = re.compile(r"youcam|perfectcorp|/media/|\.(png|jpe?g|webp|gif|svg)(\?|$)", re.I)
+
+
+def curated_links() -> frozenset[str]:
+    """The https source links in the app's own data (app/needs.json "facts")."""
+    from . import needs as N
+    urls = (f.get("url") for f in N.data().get("facts", []))
+    return frozenset(u for u in urls if isinstance(u, str) and u.startswith("https://")
+                     and not _NEVER_LINK.search(u))
+
+
+def clean_basket(basket: dict) -> dict:
+    """What a saved basket keeps: results only, plus the start plan's curated source links."""
+    clean = results_only(basket)
+    if isinstance(basket.get("start_plan"), dict):
+        clean["start_plan"] = results_only(basket["start_plan"], curated_links())
+    return clean
 
 
 def _id() -> str:
@@ -123,6 +146,38 @@ def set_shelf(uid: str, ids: list[str]) -> list[str]:
     return get_shelf(uid)
 
 
+# ---------------------------------------------------------------- the basket, from the profile
+def basket_history(uid: str, use: dict | None = None) -> dict:
+    """This user's own history and shelf, for one basket. `use` lists the saved ids kept for this
+    basket ({"chips": [...], "records": [...], "shelf": [...]}; a missing key keeps them all). It
+    only narrows: an id that isn't the user's own is ignored. Clinician-confirmed items are always
+    kept, and come back in "always" as hard-block records the basket applies whatever the answers."""
+    from . import chips as CH
+    from . import decision as D
+    use = use or {}
+
+    def kept(rows: list[dict], key: str) -> list[dict]:
+        ids = use.get(key)
+        return rows if ids is None else [r for r in rows if r["clinician_confirmed"] or r["id"] in set(ids)]
+
+    chips = kept(list_history(uid, "chip"), "chips")
+    recs = kept(list_history(uid, "record"), "records")
+    shelf = get_shelf(uid)
+    if use.get("shelf") is not None:
+        shelf = [p for p in shelf if p in set(use["shelf"])]
+    chip_rows = [{k: c.get(k) for k in ("chip", "reaction", "product_name", "confirmed_allergy",
+                                        "usual_spots_settled", "purge_choice")} for c in chips]
+    records, always = [], []
+    for r in recs:
+        t = D.RecordType(r["type"])
+        if r["clinician_confirmed"] and r.get("ingredient"):
+            t = D.RecordType.CONFIRMED_ALLERGY  # a doctor confirmed it: the hard-block type
+        rec = D.HistoryRecord(t, r.get("product_id"), r.get("ingredient"), r.get("note", ""))
+        (always if r["clinician_confirmed"] else records).append(rec)
+    always += CH.records_from([c for c in CH.parse_all(chip_rows) if c.confirmed_allergy])
+    return {"records": records, "always": always, "chips": chip_rows, "shelf": shelf}
+
+
 # ---------------------------------------------------------------- scans (results only)
 def scan_from_basket(basket: dict) -> dict:
     inp = basket.get("inputs") or {}
@@ -158,7 +213,7 @@ def list_scans(uid: str) -> list[dict]:
 # ---------------------------------------------------------------- saved baskets
 def save_basket(uid: str, basket: dict, demo: bool) -> dict:
     bid = _id()
-    clean = results_only(basket)
+    clean = clean_basket(basket)
     versions = dict((clean.get("inputs") or {}).get("rule_versions") or {})
     with DBL.connect() as con:
         con.execute("INSERT INTO user_baskets (id, user_id, created_at, demo, basket, start_plan, engine_versions) "

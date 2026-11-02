@@ -28,6 +28,18 @@ export const ACCOUNT = {
   saved: "Saved to your profile, with its start plan.",
   openProfile: "Open my profile",
   demoSaveNote: "This basket is from a prepared demo face. It's saved labelled as demo data, and adds no scan.",
+  // a logged-in basket, pre-filled from the profile
+  fromProfileRow: "Build from my profile",
+  fromProfileRowSub: "Your saved answers, history and shelf, on the prepared demo face. No photo needed.",
+  fromProfile: "from your profile",
+  changedHere: "changed for this basket only",
+  loadingProfile: "Loading your profile",
+  profileItemsHelp: "From your profile. Untick anything to leave it out of this basket only; your profile keeps it.",
+  alwaysKept: "Confirmed by a doctor: always kept out of your basket",
+  youOwn: "You already own",
+  updateProfile: "Update my profile too",
+  updateProfileHelp: "Off: these answers are for this basket only. On: your profile's finish, budget and beginner setting change to match.",
+  builtFromProfile: "Built from your profile",
   // the import question
   yesAdd: "Yes, add it",
   noKeep: "No",

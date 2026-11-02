@@ -292,7 +292,10 @@ def test_saved_basket_drops_try_on_images_and_links(env):
     built = demo_basket(c)
     b = c.post("/api/me/baskets", headers=bearer(tok()), json={"basket_id": built["id"]}).json()
     text = json.dumps(b)
-    assert '"image"' not in text and "data:" not in text and "http" not in text and "/media/" not in text
+    assert '"image"' not in text and "data:" not in text and "/media/" not in text
+    # The only links kept are the start plan's curated sources (app/needs.json), never an image or YouCam.
+    from app.accounts import curated_links
+    assert set(re.findall(r"https?://[^\"\s]+", text)) <= curated_links()
     from app.accounts import results_only
     assert results_only({"a": "https://x/y.png", "photo": 1, "k": ["data:abc", "ok"], "maskUrl": "z"}) == \
         {"a": None, "k": ["ok"]}

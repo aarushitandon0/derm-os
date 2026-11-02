@@ -16,7 +16,7 @@ Opened skincare usually can't be returned. On sale day people buy what's trendin
 | Claim linter (fails the build on overclaiming wording) | [backend/scripts/claim_lint.py](backend/scripts/claim_lint.py), run in [CI](.github/workflows/ci.yml) |
 | Benchmark of the rules | [backend/results/benchmark.md](backend/results/benchmark.md) · `python -m benchmark` |
 | Screenshots (390 px + 1440 px desktop) and a layout check at 10 screen sizes | [docs/screenshots/](docs/screenshots/) · [layout-check.json](docs/screenshots/layout-check.json) |
-| Deploy steps | [docs/DEPLOY.md](docs/DEPLOY.md) |
+| Deploy steps (incl. Supabase accounts) | [docs/DEPLOY.md](docs/DEPLOY.md) |
 
 ## The flow
 
@@ -51,6 +51,7 @@ On a laptop (1440 × 900), the face map stays on the left while the basket fills
 - **Breakout helper** ("My skin just broke out"): what changed 2–8 weeks ago, whether it could be purging, and one product to pause.
 - **Check-in** ("Is my product working?"): one new photo compared with your first scan, in plain words.
 - **Store page** with "Check against my skin" on every product.
+- **Profile** (optional account): save a basket, edit your history and what you own, see past scan results, download your data or delete your account. Hidden when accounts aren't set up; the demo never needs one.
 
 ## The 3 YouCam APIs
 
@@ -94,7 +95,7 @@ Checks, from `backend/`: `python -m pytest -q` · `python -m benchmark` · `pyth
 
 | | |
 | --- | --- |
-| Backend tests (no network, no units) | **1,100 passing** |
+| Backend tests (no network, no units) | **1,130 passing** |
 | Rule benchmark | **235 / 235** cases ([results](backend/results/benchmark.md)). We wrote it ourselves, so it isn't an independent evaluation: it shows the rules behave as designed, not how accurate YouCam's measurements are. |
 | Claim linter | **0 findings** (16 allowed uses, each with a written reason), 0 real brand names |
 | Store stock | **19** fictional products, tagged by job, zone type, texture, finish and shade |
@@ -110,24 +111,28 @@ The public demo spends nothing (`DEMO_MODE=1`). A live run needs the server set 
 
 ## Privacy
 
-- The photo is cropped and checked on the server, sent to YouCam only for a live run, and deleted from the server straight after. Afterwards the server asks YouCam to delete the task, its photo and its outputs.
+- **Your face photo is never stored**, by anyone. The selfie is cropped and checked on the server, sent to YouCam only for a live run, and deleted from the server straight after; the server then asks YouCam to delete the task, its photo and its outputs. No database table has a column that could hold a photo or an image link (a test checks every column).
+- **Accounts are optional.** The demo needs none. With an account (Supabase email + password), derm//os keeps: your name, finish goal, budget and beginner flag; your history (ingredient chips and product notes, with a "confirmed by a doctor" flag); what you own; saved baskets with their start plans; and scan **results** only (zone types, concern values, undertone and how it was worked out, engine versions). Try-on images, masks and links are removed before anything is saved.
+- **Only the server reads the database.** Row Level Security is on for every table with no policies, so the browser's key can't read or write any row. The server reads your user id only from a verified sign-in token, and every query is limited to that id.
+- **Export and delete.** The profile page has "Download my data" (one JSON file) and "Delete my account" (every row, then the sign-in account itself).
+- History typed on this device before logging in is added to your profile only if you answer yes when asked.
 - Photo metadata is stripped: what's sent to YouCam is re-encoded from pixels alone. GPS is never read, stored or logged.
 - Pasted ingredient lists are never saved.
 - Committed fixtures hold scores only. A pre-commit hook blocks photo files.
-- Keys live in server environment variables only and are never logged.
+- Keys live in server environment variables only and are never logged. The service worker never caches a signed-in request or account data.
 
 ## How it's built
 
 ![Architecture](docs/architecture.svg)
 
 - **Frontend:** React + TypeScript + Vite, a phone-first PWA that adapts to tablets and desktops with one fluid layout (CSS grid, `clamp()` and container queries), with MediaPipe Face Landmarker in the browser for the live face guide. Product packs are SVG illustrations drawn in code (shape by product type, colour by fictional brand).
-- **Backend:** FastAPI on Python 3.12, SQLite, MediaPipe for the server-side face crop and head-pose precheck. Docker image for Render.
+- **Backend:** FastAPI on Python 3.12, SQLite locally or Supabase Postgres (session pooler) when `DATABASE_URL` is set, Supabase Auth tokens checked against the project's public keys, MediaPipe for the server-side face crop and head-pose precheck. Docker image for Render.
 - **Engines** (deterministic, versioned, tested): `needs` (zone types + concerns → needs → ingredient targets), `undertone`, `basket`, `chips` (history by ingredient), `startplan`, `lookfor` (what to look for in any store), `pastecheck`, `cartcheck` (the history check ladder) and `patterns` (which ingredients the products that bothered you share).
 
 ## Next
 
+- Build the basket from your saved profile history and shelf when you're logged in (today a basket is built from the history entered in the basket flow; the profile keeps your history and saved baskets).
 - A retailer catalogue plug-in, so any shop's stock (with full ingredient lists) can feed the basket, as an embeddable "Build my basket" button.
-- Postgres and object storage in place of SQLite, so history survives restarts.
 
 ## License
 

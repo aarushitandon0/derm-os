@@ -21,6 +21,8 @@ COPY app ./app
 COPY fixtures ./fixtures
 COPY benchmark ./benchmark
 COPY scripts ./scripts
+# SQL migrations for Supabase Postgres (applied with python scripts/migrate.py; see docs/DEPLOY.md).
+COPY migrations ./migrations
 
 # The face model is downloaded at BUILD time (about 230 KB), so a cold start never fetches it.
 # The detector itself is created once, on the first scan (app/facecrop.get_detector).

@@ -1,5 +1,5 @@
 // Typed client for the derm//os FastAPI backend. Shapes mirror backend/app/*.py.
-import { readLocal, writeLocal } from "./local";
+import { mirrorRecord, readLocal, writeLocal } from "./local";
 
 // Empty in dev (Vite proxies /api and /media). On Vercel: the Render URL, no trailing slash.
 const API_BASE = ((import.meta.env.VITE_API_BASE as string | undefined) ?? "").trim().replace(/\/+$/, "");
@@ -856,7 +856,12 @@ export const api = {
   shelf: () => call<{ product_ids: string[] }>("/api/shelf"),
   setShelf: (ids: string[]) => call<{ product_ids: string[] }>("/api/shelf", json("PUT", { product_ids: ids })),
   history: () => call<HistoryRecord[]>("/api/history"),
-  addRecord: (r: Omit<HistoryRecord, "id">) => call<HistoryRecord>("/api/history", json("POST", r)),
+  // Typed by this person: also kept on this device, offered to their profile after logging in.
+  addRecord: async (r: Omit<HistoryRecord, "id">) => {
+    const out = await call<HistoryRecord>("/api/history", json("POST", r));
+    mirrorRecord({ type: r.type, product_id: r.product_id ?? null, ingredient: r.ingredient ?? null, note: r.note ?? "" });
+    return out;
+  },
   intake: (text: string) => call<IntakeResult>("/api/history/intake", json("POST", { text })),
   explanation: (trialId: string) => call<Explanation>(`/api/trials/${trialId}/explanation`),
   removeRecord: (id: string) => call<unknown>(`/api/history/${id}`, { method: "DELETE" }),
@@ -954,3 +959,92 @@ export const api = {
 // 4 SD concerns: the 9-unit price tier. Same as the server default (app/main.py DEFAULT_ACTIONS).
 export const DEFAULT_ACTIONS = ["redness", "acne", "texture", "pore"];
 export const CONCERNS = DEFAULT_ACTIONS;
+
+// ---------------------------------------------------------------- accounts (/api/me)
+// Every call carries the Supabase access token; the server reads the user from it and nothing
+// else. Face photos are never stored: a scan is results only.
+export interface Profile {
+  user_id: string;
+  display_name: string;
+  finish_goal: "dewy" | "natural" | "matte" | null;
+  budget: "under_700" | "under_1000" | "any" | null;
+  beginner: boolean;
+  created_at: string;
+  updated_at: string;
+}
+export interface MeState {
+  profile: Profile;
+  first_login: boolean;
+  photo_line: string;
+}
+export interface SavedChip extends ChipIn {
+  id: string;
+  kind: "chip";
+  clinician_confirmed: boolean;
+  created_at: string;
+}
+export interface SavedRecord {
+  id: string;
+  kind: "record";
+  type: RecordType;
+  product_id: string | null;
+  ingredient: string | null;
+  note: string;
+  clinician_confirmed: boolean;
+  created_at: string;
+}
+export interface SavedBasket {
+  id: string;
+  created_at: string;
+  demo: boolean;
+  basket: Omit<Basket, "id" | "tryon"> & { source?: string };
+  start_plan: StartPlan | null;
+  engine_versions: Record<string, string>;
+}
+export interface SavedScan {
+  id: string;
+  created_at: string;
+  zone_types: Record<string, string>;
+  concern_values: Record<string, number>;
+  undertone: string | null;
+  undertone_method: string | null;
+  engine_versions: Record<string, string>;
+}
+
+/** Server asleep or briefly down (a free host's cold start): not the same as being logged out. */
+export const isWaking = (e: unknown) => e instanceof ApiError && [0, 502, 503, 504].includes(e.status);
+export const isLoggedOut = (e: unknown) => e instanceof ApiError && e.status === 401;
+
+const auth = (token: string, init: RequestInit = {}): RequestInit => ({
+  ...init,
+  // no-store: user data never goes into any cache (the service worker skips these too).
+  cache: "no-store",
+  headers: { ...(init.headers as Record<string, string>), Authorization: `Bearer ${token}` },
+});
+
+export const meApi = {
+  get: (t: string) => call<MeState>("/api/me", auth(t)),
+  setProfile: (t: string, p: Pick<Profile, "display_name" | "finish_goal" | "budget" | "beginner">) =>
+    call<Profile>("/api/me/profile", auth(t, json("PUT", p))),
+  history: (t: string) =>
+    call<{ chips: SavedChip[]; records: SavedRecord[]; catalogue: ChipSpec[]; reactions: Record<string, string> }>(
+      "/api/me/history",
+      auth(t)
+    ),
+  setChips: (t: string, chips: ChipIn[]) => call<{ chips: SavedChip[] }>("/api/me/chips", auth(t, json("PUT", { chips }))),
+  addRecord: (t: string, r: Omit<HistoryRecord, "id"> & { clinician_confirmed?: boolean }) =>
+    call<SavedRecord>("/api/me/history", auth(t, json("POST", r))),
+  removeRecord: (t: string, id: string) => call<unknown>(`/api/me/history/${id}`, auth(t, { method: "DELETE" })),
+  shelf: (t: string) => call<{ product_ids: string[] }>("/api/me/shelf", auth(t)),
+  setShelf: (t: string, ids: string[]) =>
+    call<{ product_ids: string[] }>("/api/me/shelf", auth(t, json("PUT", { product_ids: ids }))),
+  baskets: (t: string) => call<SavedBasket[]>("/api/me/baskets", auth(t)),
+  saveBasket: (t: string, basketId: string) =>
+    call<SavedBasket>("/api/me/baskets", auth(t, json("POST", { basket_id: basketId }))),
+  removeBasket: (t: string, id: string) => call<unknown>(`/api/me/baskets/${id}`, auth(t, { method: "DELETE" })),
+  scans: (t: string) => call<{ scans: SavedScan[]; photo_line: string }>("/api/me/scans", auth(t)),
+  importDevice: (t: string, d: { chips: unknown[]; records: unknown[]; shelf: string[] }) =>
+    call<{ chips: number; records: number; shelf: number }>("/api/me/import", auth(t, json("POST", d))),
+  exportData: (t: string) => call<unknown>("/api/me/export", auth(t)),
+  deleteAccount: (t: string) => call<{ deleted: boolean }>("/api/me", auth(t, { method: "DELETE" })),
+};

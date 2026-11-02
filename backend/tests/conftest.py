@@ -13,6 +13,9 @@ os.environ.pop("DERMOS_SEED", None)
 os.environ.pop("LIVE_SCAN_MIN_BALANCE", None)
 for _k in ("LLM_PROVIDER", "LLM_BASE_URL", "LLM_MODEL", "LLM_API_KEY", "ANTHROPIC_API_KEY"):
     os.environ.pop(_k, None)
+# Accounts: tests never reach a real database or Supabase project; they set fakes themselves.
+for _k in ("DATABASE_URL", "SUPABASE_URL", "SUPABASE_JWT_SECRET", "SUPABASE_SERVICE_ROLE_KEY"):
+    os.environ.pop(_k, None)
 
 import pytest  # noqa: E402
 

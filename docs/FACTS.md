@@ -61,7 +61,7 @@ Counts measured on 1 Nov 2026.
 
 | Claim | How measured |
 | --- | --- |
-| 1,100 backend tests passing | `cd backend; python -m pytest -q` (1 Nov 2026) |
+| 1,130 backend tests passing | `cd backend; python -m pytest -q` (2 Nov 2026) |
 | 235 / 235 benchmark cases | `python -m benchmark`; `backend/results/benchmark.md` |
 | Claim linter: 0 findings, 16 allowed with a reason, 0 brand names | `python scripts/claim_lint.py`; `test_claim_linter.py` `test_every_exception_has_a_reason_and_is_still_needed` |
 | 19 store products | `store.json` `products`; `test_basket.py` `test_store_has_16_to_20_tagged_fictional_products` |
@@ -88,6 +88,15 @@ Counts measured on 1 Nov 2026.
 | Committed fixtures hold scores only | `scripts/make_fixtures.py` | `test_privacy.py` `test_committed_fixtures_have_no_urls_or_images` |
 | A pre-commit hook blocks photo files | `scripts/git-hooks/pre-commit` | **not automated** |
 | Keys never logged | `youcam.py` `delete_task_quietly()` | `test_privacy.py` `test_delete_quietly_logs_without_secrets` (that log path only) |
+| Your face photo is never stored; no table or column can hold image bytes or an image link | `migrations/001_accounts.sql`; `app/db.py` `SQLITE_DDL`; `app/accounts.py` `results_only()` | `test_accounts.py` `test_no_column_can_hold_image_bytes_or_an_image_url`, `test_saved_basket_drops_try_on_images_and_links`, `test_a_real_basket_saves_results_only_scan` |
+| Accounts are optional; the demo needs none and writes nothing to account tables | `app/main.py` `/api/me*`; `frontend/src/account.tsx` `ACCOUNTS_ENABLED` | `test_accounts.py` `test_demo_needs_no_token`, `test_demo_writes_nothing_to_user_tables`, `test_demo_reset_leaves_accounts_alone`; `frontend/scripts/account-walk.mjs` (guest walk, no login UI without Supabase env) |
+| What an account keeps: profile, history (with a doctor-confirmed flag), shelf, saved baskets with start plans, scan results | `app/accounts.py`; `migrations/001_accounts.sql` | `test_accounts.py` `test_export_has_every_kind`, `test_import_adds_device_history_and_skips_duplicate_chips` |
+| Row Level Security on for every table, with no policies | `migrations/001_accounts.sql` | `test_accounts.py` `test_rls_on_for_every_table_with_no_policies` |
+| The user id comes only from a verified token (signature, exp, aud, iss; JWKS, legacy HS256 fallback) | `app/auth.py` `verify()`, `current_user()` | `test_accounts.py` `test_valid_token_reads_the_user_from_the_token`, `test_bad_tokens_get_401` (8 cases), `test_tampered_payload_gets_401`, `test_alg_none_gets_401`, `test_hs256_fallback_with_the_legacy_secret`, `test_missing_token_gets_401_on_every_user_endpoint`, `test_user_id_in_the_body_or_query_is_ignored`, `test_jwks_is_cached` |
+| One user can't read, change or delete another's rows | `app/accounts.py` (every query scoped by user id) | `test_accounts.py` `test_user_b_cannot_read_change_or_delete_user_a` |
+| "Download my data" and "Delete my account" (every row, then the sign-in account) | `app/main.py` `me_export()`, `me_delete()`; `app/auth.py` `delete_auth_user()` | `test_accounts.py` `test_delete_account_removes_every_row_then_the_auth_user`, `test_delete_account_still_clears_rows_when_auth_removal_fails`; live check: docs/DEPLOY.md 4.4 |
+| History typed on this device is added to a profile only on "yes" | `frontend/src/deviceImport.ts` `answerImport()`; `components/Account.tsx` `ImportPrompt` | `frontend/scripts/check-import.mjs` (CI); `test_accounts.py` `test_nothing_is_imported_without_the_call`; `account-walk.mjs --account` ("No" imports nothing) |
+| The service worker never caches a signed-in request or account data | `frontend/public/sw.js`; `main.py` `no_store_user_data()` | `frontend/scripts/check-sw.mjs` (CI, 11 cases); `test_accounts.py` `test_valid_token_reads_the_user_from_the_token` (no-store header) |
 
 ## How it's built
 

@@ -7,6 +7,7 @@ import { artFor, ProductArt } from "../components/ProductArt";
 import { Icon } from "../components/Icon";
 import { Btn, IncompleteTag, Loading, NavBar, Notice, PageHead, RowLink, Section } from "../components/ui";
 import { ChipsPicker, LookFor, PasteCheck, StartPlanCard } from "../components/BasketExtras";
+import { SaveBasketCard } from "../components/Account";
 import { KEYS, writeLocal } from "../local";
 import { href } from "../router";
 import { useStore } from "../store";
@@ -286,6 +287,7 @@ export default function Basket({ autoDemo = null }: { autoDemo?: string | null }
 
       <Section label={basket.start_plan.title}>
         <StartPlanCard plan={basket.start_plan} demo={basket.source === "replay"} />
+        <SaveBasketCard basketId={basket.id} demo={!!fm.demo || basket.source === "replay"} />
       </Section>
 
       <Section label={BASKET.pasteLabel}>

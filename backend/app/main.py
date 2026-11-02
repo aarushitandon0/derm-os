@@ -8,7 +8,6 @@ import json
 import logging
 import os
 import shutil
-import sqlite3
 import tempfile
 import threading
 import uuid
@@ -19,14 +18,17 @@ from typing import Literal
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
-from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import settings  # noqa: F401  (loads backend/.env first)
+from . import accounts as AC
+from . import auth as AU
 from . import basket as BK
 from . import beginner as B
+from . import db as DBL
 from . import cartcheck as CKT
 from . import chips as CH
 from . import pastecheck as PC
@@ -100,23 +102,20 @@ app.mount("/media", StaticFiles(directory=MEDIA_DIR), name="media")
 
 
 # ---------------------------------------------------------------- storage
-# One table per kind, JSON bodies. Small on purpose: swap for Postgres by
-# replacing these four functions.
+# One table per kind, JSON bodies. Small on purpose: SQLite or Postgres behind
+# the same four functions (app/db.py). These are the guest / demo tables; accounts live in
+# their own tables (app/accounts.py), which the demo never writes to.
 # "outcomes" is what happened when a product was used (app/outcomes.py). It is a separate kind
 # from "history" on purpose: the three history record types and their blocking rules are
 # untouched, and an outcome only ever describes, never blocks.
 # "baskets" stores each basket the shopping flow built, with every input it was built from.
 # "chips" is the quick history by ingredient (app/chips.py): one row holding the whole list.
-KINDS = ("history", "shelf", "captures", "trials", "outcomes", "baskets", "chips")
+KINDS = DBL.LEGACY_KINDS
 
 
-def _db() -> sqlite3.Connection:
-    con = sqlite3.connect(DB_PATH)
-    for k in KINDS:
-        con.execute(f"CREATE TABLE IF NOT EXISTS {k} (id TEXT PRIMARY KEY, body TEXT, created TEXT)")
-    # Live YouCam units spent through this server, for the judge caps. Not touched by demo reset.
-    con.execute("CREATE TABLE IF NOT EXISTS spend (id TEXT PRIMARY KEY, day TEXT, units REAL, state TEXT, at TEXT)")
-    return con
+def _db():
+    """SQLite file by default, Postgres when DATABASE_URL is set (app/db.py)."""
+    return DBL.connect(DB_PATH)
 
 
 # ---------------------------------------------------------------- judge unit caps
@@ -172,7 +171,8 @@ def put(kind: str, body: dict, id: str | None = None) -> dict:
     id = id or body.get("id") or uuid.uuid4().hex[:12]
     body = {**body, "id": id}
     with _db() as con:
-        con.execute(f"INSERT OR REPLACE INTO {kind} VALUES (?, ?, ?)",
+        con.execute(f"INSERT INTO {kind} (id, body, created) VALUES (?, ?, ?) "
+                    "ON CONFLICT (id) DO UPDATE SET body = excluded.body, created = excluded.created",
                     (id, json.dumps(body), datetime.now(timezone.utc).isoformat()))
     return body
 
@@ -229,7 +229,9 @@ def health(x_live_passcode: str | None = Header(None)):
             "unit_reserve": unit_reserve(), "rules": [D.RULE_VERSION, E.RULE_VERSION],
             "judge_caps": {"total": cap_total, "daily": cap_daily, "spent": units_spent()},
             # Only whether the optional language layer is on, never which key.
-            "llm": L.get_provider() is not None}
+            "llm": L.get_provider() is not None,
+            # Whether this server can check sign-in tokens. Never which project or key.
+            "accounts": AU.configured()}
 
 
 @app.get("/api/catalog")
@@ -1517,3 +1519,183 @@ def demo_reset():
         for k in KINDS:
             con.execute(f"DELETE FROM {k}")
     return {"reset": True}
+
+
+# ---------------------------------------------------------------- accounts (/api/me)
+# Every endpoint here needs a verified Supabase token (app/auth.py); the user id comes only from
+# it. The demo never calls these, and nothing here touches the guest / demo tables except reading
+# the one basket a user asks to save. Face photos are never stored: only results (app/accounts.py).
+@app.middleware("http")
+async def no_store_user_data(request: Request, call_next):
+    """Account responses, and anything sent with a sign-in token, are never cached by anyone."""
+    resp = await call_next(request)
+    if request.url.path.startswith("/api/me") or request.headers.get("authorization"):
+        resp.headers["Cache-Control"] = "no-store, private"
+        resp.headers["Vary"] = "Authorization"
+    return resp
+
+
+class ProfileIn(BaseModel):
+    display_name: str = Field("", max_length=60)
+    finish_goal: Literal["dewy", "natural", "matte"] | None = None
+    budget: Literal["under_700", "under_1000", "any"] | None = None
+    beginner: bool = False
+
+
+class MeRecordIn(RecordIn):
+    clinician_confirmed: bool = False
+
+
+class SaveBasketIn(BaseModel):
+    basket_id: str = Field(min_length=1, max_length=40)
+
+
+class ImportIn(BaseModel):
+    chips: list[ChipIn] = Field(default_factory=list, max_length=40)
+    records: list[RecordIn] = Field(default_factory=list, max_length=100)
+    shelf: list[str] = Field(default_factory=list, max_length=60)
+
+
+def _valid_chips(chips: list[ChipIn]) -> list[dict]:
+    try:
+        built = [CH.Chip(**c.model_dump()) for c in chips]
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    keep = ("chip", "reaction", "product_name", "confirmed_allergy", "usual_spots_settled", "purge_choice")
+    return [{k: v for k, v in c.to_dict().items() if k in keep} for c in built]
+
+
+def _valid_record(r: RecordIn) -> dict:
+    try:
+        D.HistoryRecord(r.type, r.product_id, r.ingredient, r.note)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    if r.product_id and r.product_id not in CATALOG:
+        raise HTTPException(404, f"Unknown product {r.product_id}")
+    return {"type": r.type.value, "product_id": r.product_id, "ingredient": r.ingredient, "note": r.note}
+
+
+def _valid_shelf(ids: list[str]) -> list[str]:
+    bad = [i for i in ids if i not in CATALOG]
+    if bad:
+        raise HTTPException(404, f"Unknown products {bad}")
+    return list(dict.fromkeys(ids))
+
+
+@app.get("/api/me")
+def me(uid: str = Depends(AU.current_user)):
+    profile, created = AC.ensure_profile(uid)
+    return {"profile": profile, "first_login": created, "photo_line": AC.PHOTO_LINE}
+
+
+@app.put("/api/me/profile")
+def me_profile(body: ProfileIn, uid: str = Depends(AU.current_user)):
+    return AC.set_profile(uid, body.display_name.strip(), body.finish_goal, body.budget, body.beginner)
+
+
+@app.get("/api/me/history")
+def me_history(uid: str = Depends(AU.current_user)):
+    return {"chips": AC.list_history(uid, "chip"), "records": AC.list_history(uid, "record"),
+            "catalogue": CH.catalogue(), "reactions": CH.REACTIONS}
+
+
+@app.put("/api/me/chips")
+def me_chips(body: ChipsIn, uid: str = Depends(AU.current_user)):
+    return {"chips": AC.replace_chips(uid, _valid_chips(body.chips))}
+
+
+@app.post("/api/me/history")
+def me_add_record(body: MeRecordIn, uid: str = Depends(AU.current_user)):
+    # Clinician-confirmed: the existing confirmed_allergy record type, or the user's own tick.
+    confirmed = body.clinician_confirmed or body.type == D.RecordType.CONFIRMED_ALLERGY
+    return AC.add_history(uid, "record", _valid_record(body), confirmed)
+
+
+@app.delete("/api/me/history/{rid}")
+def me_delete_record(rid: str, uid: str = Depends(AU.current_user)):
+    if not AC.delete_history(uid, rid):
+        raise HTTPException(404, "Not in your history.")
+    return {"deleted": rid}
+
+
+@app.get("/api/me/shelf")
+def me_shelf(uid: str = Depends(AU.current_user)):
+    return {"product_ids": AC.get_shelf(uid)}
+
+
+@app.put("/api/me/shelf")
+def me_set_shelf(body: ShelfIn, uid: str = Depends(AU.current_user)):
+    return {"product_ids": AC.set_shelf(uid, _valid_shelf(body.product_ids))}
+
+
+@app.get("/api/me/baskets")
+def me_baskets(uid: str = Depends(AU.current_user)):
+    return AC.list_baskets(uid)
+
+
+@app.post("/api/me/baskets")
+def me_save_basket(body: SaveBasketIn, uid: str = Depends(AU.current_user)):
+    """Save the basket the user was looking at. A prepared demo basket is saved labelled as demo
+    data and adds no scan: only a scan of the user's own face becomes a scan row."""
+    row = get("baskets", body.basket_id)
+    if row is None:
+        raise HTTPException(404, "That basket isn't on the server any more. Build it again, then save.")
+    is_demo = bool(row.get("demo")) or row.get("source") == "replay"
+    saved = AC.save_basket(uid, {**row["basket"], "source": row.get("source")}, is_demo)
+    if not is_demo:
+        AC.add_scan(uid, AC.scan_from_basket(row["basket"]))
+    return saved
+
+
+@app.get("/api/me/baskets/{bid}")
+def me_basket(bid: str, uid: str = Depends(AU.current_user)):
+    b = AC.get_basket(uid, bid)
+    if b is None:
+        raise HTTPException(404, "Not one of your saved baskets.")
+    return b
+
+
+@app.delete("/api/me/baskets/{bid}")
+def me_delete_basket(bid: str, uid: str = Depends(AU.current_user)):
+    if not AC.delete_basket(uid, bid):
+        raise HTTPException(404, "Not one of your saved baskets.")
+    return {"deleted": bid}
+
+
+@app.get("/api/me/scans")
+def me_scans(uid: str = Depends(AU.current_user)):
+    return {"scans": AC.list_scans(uid), "photo_line": AC.PHOTO_LINE}
+
+
+@app.post("/api/me/import")
+def me_import(body: ImportIn, uid: str = Depends(AU.current_user)):
+    """The history and shelf saved on this device, added only after the user said yes."""
+    chips = _valid_chips(body.chips)
+    records = [_valid_record(r) for r in body.records]
+    shelf = _valid_shelf(body.shelf)
+    have = {c["chip"] for c in AC.list_history(uid, "chip")}
+    for c in chips:
+        if c["chip"] not in have:
+            AC.add_history(uid, "chip", c, bool(c.get("confirmed_allergy")))
+    for r in records:
+        AC.add_history(uid, "record", r, r["type"] == D.RecordType.CONFIRMED_ALLERGY.value)
+    if shelf:
+        AC.set_shelf(uid, list(dict.fromkeys(AC.get_shelf(uid) + shelf)))
+    return {"chips": len(chips), "records": len(records), "shelf": len(shelf)}
+
+
+@app.get("/api/me/export")
+def me_export(uid: str = Depends(AU.current_user)):
+    return AC.export(uid)
+
+
+@app.delete("/api/me")
+def me_delete(uid: str = Depends(AU.current_user)):
+    """Every row first, then the sign-in account itself (service role key, server-side only)."""
+    rows = AC.delete_all(uid)
+    try:
+        AU.delete_auth_user(uid)
+    except AU.AuthError as e:
+        raise HTTPException(502, f"Your saved data is deleted, but the account itself couldn't be removed "
+                                 f"yet: {e} Try again in a minute.")
+    return {"deleted": True, "rows": rows}

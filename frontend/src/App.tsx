@@ -20,6 +20,8 @@ import Routine from "./screens/Routine";
 import Shelf from "./screens/Shelf";
 import Store from "./screens/Store";
 import Trial from "./screens/Trial";
+import Profile, { Login } from "./screens/Profile";
+import { ImportPrompt } from "./components/Account";
 import { useStore } from "./store";
 
 export default function App() {
@@ -129,6 +131,14 @@ export default function App() {
     case "evidence": // older links
       screen = <Results id={b} key={b} tab={query.get("tab")} />;
       break;
+    // Accounts (optional; hidden when Supabase isn't configured). The demo never needs them.
+    case "login":
+      screen = <Login />;
+      tab = "none";
+      break;
+    case "profile":
+      screen = <Profile />;
+      break;
     case "brief":
       screen = <Brief id={b} key={b ?? "latest"} />;
       break;
@@ -146,6 +156,7 @@ export default function App() {
       )}
       <GuideBar path={path} />
       {screen}
+      <ImportPrompt />
       {tab !== "none" && <TabBar active={tab} />}
     </div>
   );

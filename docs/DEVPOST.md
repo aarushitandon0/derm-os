@@ -57,7 +57,7 @@ Decision support, not a diagnosis.
 
 **Stack:** FastAPI + SQLite on Python 3.12 in Docker (Render), React + TypeScript PWA (Vercel), and MediaPipe for the live face guide, the server crop and a free head-pose precheck.
 
-**Guard rails:** 1,100 backend tests with no network and no units; a 235-case rule benchmark (235 / 235, written by us, so not an independent evaluation); a claim linter in CI that fails the build on words like "cures", "treats", "proven" or "safe"; and docs/FACTS.md linking each claim to its code and test. Live runs need a passcode, read the real balance first, and stop at a balance floor, judge caps and a reserve.
+**Guard rails:** 1,130 backend tests with no network and no units; a 235-case rule benchmark (235 / 235, written by us, so not an independent evaluation); a claim linter in CI that fails the build on words like "cures", "treats", "proven" or "safe"; and docs/FACTS.md linking each claim to its code and test. Live runs need a passcode, read the real balance first, and stop at a balance floor, judge caps and a reserve.
 
 ### Challenges we ran into
 

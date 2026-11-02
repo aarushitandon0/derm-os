@@ -13,6 +13,7 @@ import { HomeArt } from "../components/HomeArt";
 import { ProductArt } from "../components/ProductArt";
 import { plusTarget } from "../components/TabBar";
 import { Btn, NavBar, RowLink, Section, Wordmark } from "../components/ui";
+import { AccountButton } from "../components/Account";
 import { href } from "../router";
 import { useStore } from "../store";
 
@@ -38,7 +39,7 @@ export default function Home() {
 
   return (
     <div className="page page--wide home">
-      <NavBar left={<Wordmark />} />
+      <NavBar left={<Wordmark />} right={<AccountButton />} />
 
       {/* Strategy v2 (docs/strategy.md section 4): the basket is the headline; breakout and
           check-in are the smaller options; a prepared face is one tap away. */}

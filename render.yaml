@@ -51,3 +51,14 @@ services:
       # you'll allow judges. Unset, it falls back to YOUCAM_UNIT_RESERVE.
       - key: LIVE_SCAN_MIN_BALANCE
         sync: false
+      # Accounts (optional; see docs/DEPLOY.md Part 4). Supabase's SESSION pooler string, port 5432.
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      # Server only: deletes the sign-in account when a user deletes their account.
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      # Optional: only for a project still on the legacy HS256 JWT secret.
+      - key: SUPABASE_JWT_SECRET
+        sync: false

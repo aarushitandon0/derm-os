@@ -13,6 +13,7 @@ import {
 import { RECORD } from "../copy";
 import { buildDayIcs, downloadIcs } from "../ics";
 import { Btn, Notice } from "./ui";
+import { mirrorChip, unmirrorChip } from "../local";
 
 // Basket question 2, the start plan, "what to look for" and the paste check. Every sentence the
 // user reads about their history comes from the engines (app/chips.py, startplan.py, lookfor.py,
@@ -60,8 +61,12 @@ export function ChipsPicker() {
       row.purge_choice = null;
     }
     save(have ? current.map((c) => (c.chip === id ? row : c)) : [...current, row]);
+    mirrorChip(row); // what this person tapped, offered to their profile after logging in
   };
-  const remove = (id: string) => save(current.filter((c) => c.chip !== id));
+  const remove = (id: string) => {
+    unmirrorChip(id);
+    save(current.filter((c) => c.chip !== id));
+  };
 
   const tiles = [
     ...state.catalogue.map((c) => ({ id: c.id, label: c.label })),

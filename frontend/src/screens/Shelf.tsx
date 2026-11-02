@@ -4,6 +4,7 @@ import { inr, ROLE_LABEL } from "../copy";
 import { Btn, Notice, PageHead, TopBar } from "../components/ui";
 import { go } from "../router";
 import { useStore } from "../store";
+import { mirrorShelf } from "../local";
 
 const ROLES: Role[] = ["cleanser", "toner", "serum", "treatment", "moisturiser", "sunscreen"];
 
@@ -22,6 +23,7 @@ export default function Shelf() {
     setErr(null);
     try {
       await api.setShelf(sel);
+      mirrorShelf(sel.filter((id) => !shelf.includes(id)), shelf.filter((id) => !sel.includes(id)));
       await refresh();
       go("/history");
     } catch (e) {

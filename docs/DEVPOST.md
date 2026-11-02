@@ -55,9 +55,9 @@ Decision support, not a diagnosis.
 - `cartcheck`: the history check ladder (blocked, repeats a pattern, patch-test first, no conflicts, and unknown for an incomplete list).
 - `patterns`: which ingredients the products that bothered you share, and how often they also appear in products that suited you.
 
-**Stack:** FastAPI + SQLite on Python 3.12 in Docker (Render), React + TypeScript PWA (Vercel), and MediaPipe for the live face guide, the server crop and a free head-pose precheck.
+**Stack:** FastAPI on Python 3.12 (SQLite locally, Supabase Postgres + Auth for optional accounts) in Docker (Render), React + TypeScript PWA (Vercel), and MediaPipe for the live face guide, the server crop and a free head-pose precheck.
 
-**Guard rails:** 1,130 backend tests with no network and no units; a 235-case rule benchmark (235 / 235, written by us, so not an independent evaluation); a claim linter in CI that fails the build on words like "cures", "treats", "proven" or "safe"; and docs/FACTS.md linking each claim to its code and test. Live runs need a passcode, read the real balance first, and stop at a balance floor, judge caps and a reserve.
+**Guard rails:** 1,182 backend tests with no network and no units; a 238-case rule benchmark (238 / 238, written by us, so not an independent evaluation); a claim linter in CI that fails the build on words like "cures", "treats", "proven" or "safe"; and docs/FACTS.md linking each claim to its code and test. Live runs need a passcode, read the real balance first, and stop at a balance floor, judge caps and a reserve.
 
 ### Challenges we ran into
 
@@ -73,7 +73,6 @@ Both came from our first live run on a real face:
 ### What's next
 
 - **A retailer catalogue plug-in:** any shop's stock with full ingredient lists feeds the basket, as an embeddable "Build my basket" button.
-- Postgres and object storage, so history survives restarts.
 
 ### Try it
 

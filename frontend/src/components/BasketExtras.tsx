@@ -333,6 +333,8 @@ export function PasteCheck() {
   };
   return (
     <div className="paste">
+      <div className="paste__grid">
+      <div className="paste__form">
       <label className="field">
         <span>Paste the ingredient list from the pack or the product page</span>
         <textarea
@@ -367,7 +369,12 @@ export function PasteCheck() {
         {busy ? "Checking…" : "Check it"}
       </Btn>
       <p className="small muted">Nothing you paste is saved, and brand names are never shown.</p>
+      </div>
+      <div className="paste__out">
       {err && <Notice tone="stop">{err}</Notice>}
+      {!res && !err && (
+        <p className="paste__empty">The result appears here, checked against your history the same way as this shop's stock.</p>
+      )}
       {res && (
         <section className={`pasteres pasteres--${res.rung}`} aria-live="polite">
           <p className="pasteres__name">{res.name}</p>
@@ -386,6 +393,8 @@ export function PasteCheck() {
           <p className="prose nextstep">{res.next_step}</p>
         </section>
       )}
+      </div>
+      </div>
     </div>
   );
 }

@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { Loading, Notice, Wordmark } from "./components/ui";
 import { TabBar, type Tab } from "./components/TabBar";
-import { KEYS, readLocal } from "./local";
 import { useRoute } from "./router";
 import { GuideBar } from "./components/Guide";
 import { Waking } from "./components/Waking";
@@ -21,7 +20,6 @@ import Routine from "./screens/Routine";
 import Shelf from "./screens/Shelf";
 import Store from "./screens/Store";
 import Trial from "./screens/Trial";
-import Welcome from "./screens/Welcome";
 import { useStore } from "./store";
 
 export default function App() {
@@ -53,18 +51,12 @@ export default function App() {
   let screen: ReactNode;
   let tab: Tab | "none" = null;
   switch (a) {
+    // Strategy v2: "/" is always the v2 home. It used to show the v1 welcome screen to anyone
+    // without a saved "onboarded" flag, which is every first-time visitor (and every judge).
     case undefined:
-      if (!readLocal<boolean>(KEYS.onboarded, false)) {
-        screen = <Welcome />;
-        tab = "none";
-      } else {
-        screen = <Home />;
-        tab = "home";
-      }
-      break;
-    case "welcome":
-      screen = <Welcome />;
-      tab = "none";
+    case "welcome": // older links
+      screen = <Home />;
+      tab = "home";
       break;
     case "start":
       screen = <Intent />;
@@ -77,7 +69,7 @@ export default function App() {
       break;
     // Strategy v2, the hero flow: build my basket from my face.
     case "basket":
-      screen = <Basket />;
+      screen = <Basket autoDemo={query.get("demo")} />;
       tab = "none";
       break;
     // Moment 1: the sale page, and a product's check opened in place.

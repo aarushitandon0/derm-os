@@ -10,12 +10,12 @@ Opened skincare usually can't be returned. On sale day people buy what's trendin
 
 | What | Where |
 | --- | --- |
-| Live app (phone first) | _link added after deploy_ · tap **Build my basket from my face** → **Use Riya's demo face** |
+| Live app (phone, tablet or laptop) | _link added after deploy_ · tap **Use Riya's demo face** on the home screen → **Build my basket** |
 | Video (under 3 minutes) | _link added after upload_ |
 | Every claim in this README, with its code and test | [docs/FACTS.md](docs/FACTS.md) |
 | Claim linter (fails the build on overclaiming wording) | [backend/scripts/claim_lint.py](backend/scripts/claim_lint.py), run in [CI](.github/workflows/ci.yml) |
 | Benchmark of the rules | [backend/results/benchmark.md](backend/results/benchmark.md) · `python -m benchmark` |
-| Screenshots (390 px) | [docs/screenshots/](docs/screenshots/) |
+| Screenshots (390 px + 1440 px desktop) and a layout check at 10 screen sizes | [docs/screenshots/](docs/screenshots/) · [layout-check.json](docs/screenshots/layout-check.json) |
 | Deploy steps | [docs/DEPLOY.md](docs/DEPLOY.md) |
 
 ## The flow
@@ -39,6 +39,10 @@ Example skip lines from the prepared demo:
 | Face map | Basket | Skipped | Try-on |
 | --- | --- | --- | --- |
 | ![Face map](docs/screenshots/05-riya-face-map.png) | ![Basket cards](docs/screenshots/06-riya-basket-cards.png) | ![Skipped with reasons](docs/screenshots/07-riya-skipped-with-reasons.png) | ![Try-on](docs/screenshots/10-try-on-matte-vs-dewy.png) |
+
+On a laptop (1440 × 900), the face map stays on the left while the basket fills the right:
+
+![Face map and basket on a 1440 px laptop](docs/screenshots/17-desktop-face-map-basket-1440.png)
 
 **Nothing tried yet?** Pick "Use a beginner demo face" (or answer "nothing tried yet"). The history step is skipped, and every pick and every "Also fits" alternative leans gentle: no fragrance, essential oils or Alcohol Denat., few actives.
 
@@ -72,7 +76,7 @@ cd frontend; npm install; npm run dev -- --host 127.0.0.1 --port 5180
 start http://127.0.0.1:5180
 ```
 
-Tap **Build my basket from my face** → **Use Riya's demo face** → **Build my basket**.
+Tap **Use Riya's demo face** → **Build my basket** (or **Build my basket from my face** → **Use Riya's demo face** → **Build my basket**).
 
 Checks, from `backend/`: `python -m pytest -q` · `python -m benchmark` · `python scripts/claim_lint.py`. From `frontend/`: `npx tsc -b` · `npx vite build`.
 
@@ -86,7 +90,7 @@ Checks, from `backend/`: `python -m pytest -q` · `python -m benchmark` · `pyth
 - **Decision support, not a diagnosis.** derm//os doesn't name skin conditions. For painful, cystic or persistent breakouts it says to see a dermatologist.
 - All products and brands in the app are fictional.
 
-## Counts (measured 1 Nov 2026)
+## Counts (measured 2 Nov 2026)
 
 | | |
 | --- | --- |
@@ -95,7 +99,8 @@ Checks, from `backend/`: `python -m pytest -q` · `python -m benchmark` · `pyth
 | Claim linter | **0 findings** (16 allowed uses, each with a written reason), 0 real brand names |
 | Store stock | **19** fictional products, tagged by job, zone type, texture, finish and shade |
 | Ingredient chips (history by ingredient) | **13**, over **6** ingredient families with synonyms |
-| Screenshots at 390 px | **15**, 0 sideways scroll, 0 tap targets under 44 px |
+| Screenshots | **15** at 390 px + **3** at 1440 px desktop |
+| Layout check (10 screen sizes, 360 × 740 to 2560 × 1440, incl. 844 × 390 landscape and 1280 × 720) | **0** console errors, **0** sideways scroll, **0** tap targets under 44 px, **0** overflowing elements, main home button visible without scrolling on all 10 ([results](docs/screenshots/layout-check.json), `node frontend/scripts/layout-check.mjs`) |
 
 CI runs pytest, the benchmark, the claim linter, the TypeScript check and the production build on every push.
 
@@ -115,7 +120,7 @@ The public demo spends nothing (`DEMO_MODE=1`). A live run needs the server set 
 
 ![Architecture](docs/architecture.svg)
 
-- **Frontend:** React + TypeScript + Vite, a phone-first PWA, with MediaPipe Face Landmarker in the browser for the live face guide.
+- **Frontend:** React + TypeScript + Vite, a phone-first PWA that adapts to tablets and desktops with one fluid layout (CSS grid, `clamp()` and container queries), with MediaPipe Face Landmarker in the browser for the live face guide. Product packs are SVG illustrations drawn in code (shape by product type, colour by fictional brand).
 - **Backend:** FastAPI on Python 3.12, SQLite, MediaPipe for the server-side face crop and head-pose precheck. Docker image for Render.
 - **Engines** (deterministic, versioned, tested): `needs` (zone types + concerns → needs → ingredient targets), `undertone`, `basket`, `chips` (history by ingredient), `startplan`, `lookfor` (what to look for in any store), `pastecheck`, `cartcheck` (the history check ladder) and `patterns` (which ingredients the products that bothered you share).
 

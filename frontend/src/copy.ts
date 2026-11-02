@@ -322,7 +322,7 @@ export const MOMENTS: { id: MomentId; label: string; sub: string; to: string }[]
   {
     id: "mirror",
     label: "Is my product working?",
-    sub: "An honest read on your scans, including when they can't tell yet.",
+    sub: "One new photo compared with your first scan, in plain words.",
     to: "/progress",
   },
 ];

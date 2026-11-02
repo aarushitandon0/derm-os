@@ -1,4 +1,5 @@
-// 390 px screenshots of the strategy v2 flow (riya + beginner), plus a layout check on every screen.
+// 390 px screenshots of the strategy v2 flow (riya + beginner), plus a layout check on every screen
+// (written to shots-390.json). For every viewport from 360 px to 2560 px, see scripts/layout-check.mjs.
 //
 //   1. API in demo mode, YouCam key empty:
 //        cd backend; $env:DEMO_MODE="1"; $env:YOUCAM_API_KEY=""; python -m uvicorn app.main:app --host 127.0.0.1 --port 8010
@@ -176,9 +177,9 @@ async function main() {
     await p.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
     await p.send("Page.navigate", { url: `${BASE}/#/` });
     await sleep(1500);
-    // A fresh start: prepared data reset, first launch skipped.
+    // A fresh start, as a first-time visitor: prepared data reset, nothing saved on the device.
     await p.eval(`fetch("/api/demo/reset", {method: "POST"}).then(() => { localStorage.clear();
-      localStorage.setItem("dermos.onboarded", "true"); location.reload(); return true; })`);
+      location.reload(); return true; })`);
     await sleep(2500);
 
     // ---- Riya: selfie -> face map -> history -> basket -> start plan -> try-on
@@ -245,7 +246,8 @@ async function main() {
     await p.shotEl("14-beginner-basket-cards.png", ".bcards");
     await p.shotEl("15-beginner-start-plan.png", ".plan");
 
-    writeFileSync(join(OUT, "layout-check.json"), JSON.stringify(report, null, 2));
+    // layout-check.json holds the multi-viewport check (scripts/layout-check.mjs); this is the 390 px set.
+    writeFileSync(join(OUT, "shots-390.json"), JSON.stringify(report, null, 2));
     const bad = report.filter((r) => r.sideways);
     console.log(`\n${report.length} screens at ${W}px: ${bad.length} with sideways scroll, ${report.reduce((n, r) => n + r.small.length, 0)} small targets.`);
     ws.close();

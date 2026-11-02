@@ -162,8 +162,8 @@ def test_the_snail_mucin_is_ranked_low_with_its_reason(client):
 
 
 def _weeks_ago(w):
-    from datetime import date, timedelta
-    return (date.today() - timedelta(weeks=w)).isoformat()
+    from datetime import datetime, timedelta, timezone
+    return (datetime.now(timezone.utc).date() - timedelta(weeks=w)).isoformat()
 
 
 # ---------------------------------------------------------------- expected outcome 5: meera

@@ -66,7 +66,8 @@ Counts measured on 1 Nov 2026.
 | Claim linter: 0 findings, 16 allowed with a reason, 0 brand names | `python scripts/claim_lint.py`; `test_claim_linter.py` `test_every_exception_has_a_reason_and_is_still_needed` |
 | 19 store products | `store.json` `products`; `test_basket.py` `test_store_has_16_to_20_tagged_fictional_products` |
 | 13 ingredient chips over 6 families | `chips.json` `chips`; `families.json` |
-| 15 screenshots at 390 px, 0 sideways scroll, 0 targets under 44 px | `frontend/scripts/screenshots.mjs` → `docs/screenshots/layout-check.json`; **not in CI** |
+| 15 screenshots at 390 px, 0 sideways scroll, 0 targets under 44 px | `frontend/scripts/screenshots.mjs` → `docs/screenshots/shots-390.json`; **not in CI** |
+| Layout check at 10 screen sizes (360 × 740 to 2560 × 1440): 0 console errors, 0 sideways scroll, 0 tap targets under 44 px on touch sizes, 0 overflowing elements, home button visible without scrolling | `frontend/scripts/layout-check.mjs` → `docs/screenshots/layout-check.json`; **not in CI** |
 | CI runs pytest, benchmark, linter, tsc, vite build | `.github/workflows/ci.yml` |
 
 ## Units are guarded

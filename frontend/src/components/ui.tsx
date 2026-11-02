@@ -54,9 +54,19 @@ export function PageHead({ eyebrow, title, lede }: { eyebrow?: string; title: Re
   );
 }
 
-export function Section({ label, children, aside }: { label: string; children: ReactNode; aside?: ReactNode }) {
+export function Section({
+  label,
+  children,
+  aside,
+  className,
+}: {
+  label: string;
+  children: ReactNode;
+  aside?: ReactNode;
+  className?: string;
+}) {
   return (
-    <section className="section">
+    <section className={className ? `section ${className}` : "section"}>
       <div className="section__head">
         <h2 className="section__label">{label}</h2>
         {aside}

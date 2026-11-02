@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, assetUrl, type Basket as BasketData, type BasketJob, type BasketQuestion } from "../api";
 import { BASKET } from "../basketCopy";
 import { DEMO_DATA_TAG, inr, NOT_DIAGNOSIS } from "../copy";
 import { FaceMap } from "../components/FaceMap";
-import { ProductArt } from "../components/ProductArt";
+import { artFor, ProductArt } from "../components/ProductArt";
+import { Icon } from "../components/Icon";
 import { Btn, IncompleteTag, Loading, NavBar, Notice, PageHead, RowLink, Section } from "../components/ui";
 import { ChipsPicker, LookFor, PasteCheck, StartPlanCard } from "../components/BasketExtras";
 import { KEYS, writeLocal } from "../local";
@@ -17,8 +18,8 @@ type Step = "start" | "questions" | "result" | "tryon";
  * try-on -> one next step. Every sentence comes from the backend engines, so the wording rules
  * live in one place; this screen lays them out.
  */
-export default function Basket() {
-  const { health, refresh } = useStore();
+export default function Basket({ autoDemo = null }: { autoDemo?: string | null }) {
+  const { health, refresh, catalog } = useStore();
   const [step, setStep] = useState<Step>("start");
   const [questions, setQuestions] = useState<BasketQuestion[] | null>(null);
   const [onRecord, setOnRecord] = useState<{ records: number; outcomes: number; bothered: number } | null>(null);
@@ -69,6 +70,15 @@ export default function Basket() {
     }
   };
 
+  // Home's demo-face links open here with ?demo=riya or ?demo=beginner: skip straight to the questions.
+  const autoRan = useRef(false);
+  useEffect(() => {
+    if (autoRan.current || (autoDemo !== "riya" && autoDemo !== "beginner")) return;
+    autoRan.current = true;
+    void useDemoFace(autoDemo);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoDemo]);
+
   const build = async () => {
     setBusy(true);
     setErr(null);
@@ -87,9 +97,13 @@ export default function Basket() {
 
   if (step === "start")
     return (
-      <div className="page">
+      <div className="page page--wide">
         <NavBar back="/" />
-        <PageHead eyebrow={BASKET.usp} title={BASKET.hero} lede={BASKET.heroSub} />
+        <div className="split">
+          <div className="split__aside">
+            <PageHead eyebrow={BASKET.usp} title={BASKET.hero} lede={BASKET.heroSub} />
+          </div>
+          <div className="split__main">
         <Section label={BASKET.startTitle}>
           <div className="choices">
             <RowLink icon="search" title={BASKET.demoFace} sub={BASKET.demoFaceSub} onClick={() => useDemoFace("riya")} />
@@ -120,14 +134,23 @@ export default function Basket() {
         </Section>
         {busy && <Loading label="Loading the demo history" />}
         {err && <Notice tone="stop">{err}</Notice>}
+          </div>
+        </div>
         <p className="foot small">{NOT_DIAGNOSIS} All products shown are fictional.</p>
       </div>
     );
 
   if (step === "questions")
     return (
-      <div className="page">
-        <NavBar back="/basket" />
+      <div className="page page--wide">
+        <NavBar
+          back={null}
+          left={
+            <button className="iconbtn" onClick={() => setStep("start")} aria-label="Back">
+              <Icon name="back" />
+            </button>
+          }
+        />
         {demoFace && (
           <p className="tag tag--prepared">
             {DEMO_DATA_TAG} · {persona === "riya" ? "Riya" : "Beginner"}
@@ -135,10 +158,11 @@ export default function Basket() {
         )}
         <PageHead title={BASKET.questionsTitle} />
         {!questions ? (
-          <Loading />
+          <Loading label="Loading the questions" />
         ) : (
-          questions.map((q) => (
-            <Section key={q.id} label={q.text}>
+          <div className="qgrid">
+          {questions.map((q) => (
+            <Section key={q.id} label={q.text} className={`qgrid__item qgrid__item--${q.id}`}>
               <p className="formhelp">{q.why}</p>
               {q.id === "history" && onRecord && (
                 <p className="small">
@@ -170,10 +194,11 @@ export default function Basket() {
                 ))}
               </div>
             </Section>
-          ))
+          ))}
+          </div>
         )}
         {err && <Notice tone="stop">{err}</Notice>}
-        <div className="actions">
+        <div className="actions actions--bar">
           <Btn onClick={build} disabled={busy || !questions} wide>
             {busy ? BASKET.building : BASKET.build}
           </Btn>
@@ -182,23 +207,32 @@ export default function Basket() {
       </div>
     );
 
-  if (!basket) return <Loading />;
+  if (!basket)
+    return (
+      <div className="page page--center">
+        <Loading label={BASKET.building} />
+      </div>
+    );
 
   if (step === "tryon") return <TryOnView basket={basket} onBack={() => setStep("result")} />;
 
   const fm = basket.face_map;
   return (
-    <div className="page">
+    <div className="page page--wide">
       <NavBar back="/" />
       {(fm.demo || basket.source === "replay") && (
         <p className="tag tag--prepared">{basket.demo_label ?? DEMO_DATA_TAG} · fictional shop and products</p>
       )}
       {basket.notice && <Notice tone="warn">{basket.notice}</Notice>}
-      <PageHead eyebrow={BASKET.usp} title={BASKET.faceMapLabel} lede={fm.needs_line} />
-      <FaceMap map={fm} />
-      {fm.see_doctor && <p className="small">{fm.see_doctor}</p>}
-      <p className="small muted">{fm.undertone.note}</p>
+      <div className="bresult">
+      <aside className="bresult__map" aria-label={BASKET.faceMapLabel}>
+        <PageHead eyebrow={BASKET.usp} title={BASKET.faceMapLabel} lede={fm.needs_line} />
+        <FaceMap map={fm} />
+        {fm.see_doctor && <p className="small">{fm.see_doctor}</p>}
+        <p className="small muted">{fm.undertone.note}</p>
+      </aside>
 
+      <div className="bresult__main">
       <Section label={BASKET.basketLabel} aside={<span className="small">{BASKET.total}: {inr(basket.total_inr)}</span>}>
         <ul className="bcards">
           {basket.jobs.map((j) => (
@@ -217,14 +251,19 @@ export default function Basket() {
           <ul className="skips">
             {basket.skipped.map((s) => (
               <li key={s.product_id} className={`skip skip--${s.kind}`}>
-                <span className="skip__name">
-                  {s.brand} {s.name}
+                <span className="skip__art">
+                  <ProductArt product={artFor(catalog, s.product_id, s)} size={44} />
                 </span>
-                <span className="skip__kind">{s.label}</span>
-                <span className="skip__reason">{s.reason}</span>
-                {s.all_reasons && s.all_reasons.length > 1 && (
-                  <span className="skip__more">Also: {s.all_reasons.slice(1).join(" ")}</span>
-                )}
+                <span className="skip__body">
+                  <span className="skip__name">
+                    {s.brand} {s.name}
+                  </span>
+                  <span className="skip__kind">{s.label}</span>
+                  <span className="skip__reason">{s.reason}</span>
+                  {s.all_reasons && s.all_reasons.length > 1 && (
+                    <span className="skip__more">Also: {s.all_reasons.slice(1).join(" ")}</span>
+                  )}
+                </span>
               </li>
             ))}
           </ul>
@@ -258,6 +297,8 @@ export default function Basket() {
           </Btn>
         </div>
       </Section>
+      </div>
+      </div>
 
       <p className="foot small">
         {NOT_DIAGNOSIS} Skin type and concerns by YouCam AI Skin Analysis, colour by YouCam AI Facial Color Tones
@@ -276,7 +317,7 @@ function JobCard({ job }: { job: BasketJob }) {
       {p ? (
         <div className="bcard__head">
           <span className="bcard__art">
-            <ProductArt product={p} size={48} />
+            <ProductArt product={p} size={64} />
           </span>
           <span className="bcard__body">
             <span className="bcard__brand">{p.brand}</span>
@@ -332,20 +373,35 @@ function JobCard({ job }: { job: BasketJob }) {
 function TryOnView({ basket, onBack }: { basket: BasketData; onBack: () => void }) {
   const t = basket.tryon;
   return (
-    <div className="page">
+    <div className="page page--wide">
       <NavBar back={null} left={<button className="textbtn" onClick={onBack}>‹ {BASKET.backToBasket}</button>} />
       {basket.source === "replay" && <p className="tag tag--prepared">{basket.demo_label ?? DEMO_DATA_TAG}</p>}
-      <PageHead title={BASKET.tryonTitle} lede={BASKET.tryonLede} />
-      {t.status === "no_shade" ? (
-        <Notice>{t.line}</Notice>
-      ) : (
-        <>
-          {t.shade && (
-            <p className="small">
-              <span className="swatch" style={{ background: t.shade.hex }} aria-hidden /> {t.product ? `${t.product.name}, ` : ""}
-              shade {t.shade.name} · {t.undertone} undertone
-            </p>
+      <div className="tryonview">
+        <div className="tryonview__info">
+          <PageHead title={BASKET.tryonTitle} lede={BASKET.tryonLede} />
+          {t.product && (
+            <div className="tryonview__product">
+              <ProductArt product={t.product} size={72} />
+              <span className="tryonview__pname">
+                <span className="bcard__brand">{t.product.brand}</span>
+                <span className="bcard__name">{t.product.name}</span>
+                {t.shade && (
+                  <span className="bcard__shade">
+                    <span className="swatch" style={{ background: t.shade.hex }} aria-hidden /> Shade {t.shade.name} ·{" "}
+                    {t.undertone} undertone
+                  </span>
+                )}
+              </span>
+            </div>
           )}
+          {t.status === "no_shade" && <Notice>{t.line}</Notice>}
+          <div className="actions">
+            <Btn onClick={onBack} wide>
+              {BASKET.backToBasket}
+            </Btn>
+          </div>
+        </div>
+        {t.status !== "no_shade" && (
           <div className="tryon" role="group" aria-label={BASKET.tryonTitle}>
             {t.looks.map((lk) => (
               <figure key={lk.look} className="tryon__panel">
@@ -361,16 +417,9 @@ function TryOnView({ basket, onBack }: { basket: BasketData; onBack: () => void 
               </figure>
             ))}
           </div>
-        </>
-      )}
-      <div className="actions">
-        <Btn onClick={onBack} wide>
-          {BASKET.backToBasket}
-        </Btn>
+        )}
       </div>
-      <p className="foot small">
-        {NOT_DIAGNOSIS} Try-on by YouCam AI Makeup Virtual Try-On.
-      </p>
+      <p className="foot small">{NOT_DIAGNOSIS} Try-on by YouCam AI Makeup Virtual Try-On.</p>
     </div>
   );
 }

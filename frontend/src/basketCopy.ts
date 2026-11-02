@@ -48,3 +48,24 @@ export const ZONE_WORD: Record<string, string> = {
   dry: "dry: tight, needs water",
   normal: "normal: comfortable",
 };
+
+// The face map's colour key, in words (no numbers).
+export const ZONE_KEY: { type: string; word: string }[] = [
+  { type: "oily", word: "amber: oily" },
+  { type: "dry", word: "blue: dry" },
+  { type: "normal", word: "sage: normal" },
+];
+
+// The v2 home (docs/strategy.md section 4).
+export const HOME = {
+  lede: "One selfie becomes a skincare basket from this shop's stock: read zone by zone, matched to the finish you want, in your undertone, minus what bothered you before.",
+  tryLabel: "No selfie handy? Try it on a prepared face",
+  riya: "Use Riya's demo face",
+  riyaSub: "Combination skin, history saved",
+  beginner: "Use a beginner demo face",
+  beginnerSub: "Nothing tried yet",
+  otherLabel: "Or start somewhere else",
+  storeLink: "Check one product from the sale",
+  fictional: "All products are fictional.",
+  artCaption: "Face map, zone by zone, then a basket from the shelf",
+};

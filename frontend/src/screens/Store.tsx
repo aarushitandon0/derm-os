@@ -50,7 +50,7 @@ export default function Store({ checkId }: { checkId?: string | null }) {
   }
 
   return (
-    <div className="page">
+    <div className="page page--wide">
       <NavBar back="/" />
       <p className="tag tag--prepared">{DEMO_DATA_TAG} · fictional shop and products</p>
       <PageHead eyebrow={data.name} title={data.line} lede={STORE_HELP} />

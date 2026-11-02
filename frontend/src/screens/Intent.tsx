@@ -234,7 +234,7 @@ function Chooser() {
 
   return (
     <div className="page page--flow">
-      <NavBar back="/welcome" center={<span className="stepbar" role="progressbar" aria-label="Setup" aria-valuemin={1} aria-valuemax={2} aria-valuenow={1}><span /></span>} />
+      <NavBar back="/" center={<span className="stepbar" role="progressbar" aria-label="Setup" aria-valuemin={1} aria-valuemax={2} aria-valuenow={1}><span /></span>} />
       <PageHead title="What brings you here?" lede="We'll tailor your experience." />
       <div className="choices" role="radiogroup" aria-label="What brings you here?">
         {options.map((o) => (

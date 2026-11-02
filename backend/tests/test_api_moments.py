@@ -5,7 +5,7 @@ New cases only. YouCam is mocked, so no unit is ever spent here.
 """
 import io
 import itertools
-from datetime import date, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -45,7 +45,7 @@ def jpg(color=(200, 160, 140)):
 
 
 def ago(weeks):
-    return (date.today() - timedelta(weeks=weeks)).isoformat()
+    return (datetime.now(timezone.utc).date() - timedelta(weeks=weeks)).isoformat()
 
 
 def seed_riya(client):

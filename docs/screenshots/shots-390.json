@@ -1,0 +1,92 @@
+[
+  {
+    "name": "01-home.png",
+    "sideways": false,
+    "scrollWidth": 390,
+    "small": []
+  },
+  {
+    "name": "02-basket-start.png",
+    "sideways": false,
+    "scrollWidth": 390,
+    "small": []
+  },
+  {
+    "name": "03-questions-and-history-chips.png",
+    "sideways": false,
+    "scrollWidth": 390,
+    "small": []
+  },
+  {
+    "name": "04-riya-basket-full.png",
+    "sideways": false,
+    "scrollWidth": 390,
+    "small": []
+  },
+  {
+    "name": "05-riya-face-map.png",
+    "sideways": false,
+    "scrollWidth": 390,
+    "small": []
+  },
+  {
+    "name": "06-riya-basket-cards.png",
+    "sideways": false,
+    "scrollWidth": 390,
+    "small": []
+  },
+  {
+    "name": "07-riya-skipped-with-reasons.png",
+    "sideways": false,
+    "scrollWidth": 390,
+    "small": []
+  },
+  {
+    "name": "08-riya-start-plan.png",
+    "sideways": false,
+    "scrollWidth": 390,
+    "small": []
+  },
+  {
+    "name": "09-paste-a-label.png",
+    "sideways": false,
+    "scrollWidth": 390,
+    "small": []
+  },
+  {
+    "name": "10-try-on-matte-vs-dewy.png",
+    "sideways": false,
+    "scrollWidth": 390,
+    "small": []
+  },
+  {
+    "name": "11-breakout-helper.png",
+    "sideways": false,
+    "scrollWidth": 390,
+    "small": []
+  },
+  {
+    "name": "12-beginner-questions.png",
+    "sideways": false,
+    "scrollWidth": 390,
+    "small": []
+  },
+  {
+    "name": "13-beginner-basket-full.png",
+    "sideways": false,
+    "scrollWidth": 390,
+    "small": []
+  },
+  {
+    "name": "14-beginner-basket-cards.png",
+    "sideways": false,
+    "scrollWidth": 390,
+    "small": []
+  },
+  {
+    "name": "15-beginner-start-plan.png",
+    "sideways": false,
+    "scrollWidth": 390,
+    "small": []
+  }
+]

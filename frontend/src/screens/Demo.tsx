@@ -17,10 +17,10 @@ export default function Demo({ step }: { step: number }) {
 
   return (
     <div className="page page--flow">
-      <NavBar back="/welcome" />
+      <NavBar back="/" />
       <PageHead
-        title="The 90-second demo"
-        lede="Riya is deciding whether a new moisturiser is worth it. Then Meera, whose trial shows a change."
+        title="Check-in walkthrough"
+        lede="The optional check-in, “Is my product working?”: Riya tries a new moisturiser, then Meera, whose check-ins show a change."
       />
       <p className="tag tag--prepared demo__tag">Prepared demo data</p>
       <ol className="demo__steps">

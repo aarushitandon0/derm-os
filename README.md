@@ -1,7 +1,5 @@
 # derm//os
 
-[![CI](https://github.com/aarushitandon0/derm-os/actions/workflows/ci.yml/badge.svg)](https://github.com/aarushitandon0/derm-os/actions/workflows/ci.yml)
-
 **Shop by your face, not by the hype.**
 
 One selfie becomes a skincare basket from the store's own stock: measured zone by zone with YouCam, matched to the finish you want, in your undertone, minus everything that has bothered you before. Then you see the finish on your own face before you pay.
